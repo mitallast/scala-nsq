@@ -34,8 +34,6 @@ trait NSQClient extends Closeable {
 
 trait NSQProducer extends Closeable {
 
-  def connect(host: String, port: Int): Unit
-
   def pub(topic: String, data: Array[Byte]): Future[OK]
 
   def pubStr(topic: String, data: String): Future[OK] = {
@@ -50,8 +48,6 @@ trait NSQProducer extends Closeable {
 }
 
 trait NSQConsumer extends Closeable {
-
-  def connect(host: String, port: Int): Unit
 
   def ready(count: Int): Unit
 

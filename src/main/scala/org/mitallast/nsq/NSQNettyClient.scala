@@ -1,21 +1,20 @@
 package org.mitallast.nsq
 
 import java.net.InetSocketAddress
-import java.nio.charset.Charset
 import java.util.concurrent.ConcurrentLinkedQueue
 
 import com.typesafe.config.{Config, ConfigFactory}
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.{ByteBufAllocator, PooledByteBufAllocator, Unpooled}
 import io.netty.channel._
+import io.netty.channel.epoll.{Epoll, EpollEventLoopGroup, EpollSocketChannel}
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.pool._
-import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.codec.compression.{SnappyFramedDecoder, SnappyFramedEncoder, ZlibCodecFactory, ZlibWrapper}
 import io.netty.handler.ssl.SslContextBuilder
-import io.netty.util.{AttributeKey, CharsetUtil}
 import io.netty.util.concurrent.{DefaultThreadFactory, FutureListener, Future ⇒ NettyFuture}
+import io.netty.util.{AttributeKey, CharsetUtil}
 import org.mitallast.nsq.protocol._
 import org.slf4j.LoggerFactory
 
@@ -169,6 +168,8 @@ class NSQNettyClient(val config: Config) extends NSQClient {
   private[nsq] val V2 = "  V2".getBytes(CharsetUtil.US_ASCII)
   private[nsq] val log = LoggerFactory.getLogger(getClass)
 
+  private[nsq] val epoll: Boolean = config.getBoolean("scala-nsq.epoll")
+
   private[nsq] val threads: Int = config.getInt("scala-nsq.threads")
   private[nsq] val keepAlive: Boolean = config.getBoolean("scala-nsq.keep-alive")
   private[nsq] val reuseAddress: Boolean = config.getBoolean("scala-nsq.reuse-address")
@@ -178,10 +179,24 @@ class NSQNettyClient(val config: Config) extends NSQClient {
   private[nsq] val wbLow: Int = config.getInt("scala-nsq.wb-low")
   private[nsq] val wbHigh: Int = config.getInt("scala-nsq.wb-high")
   private[nsq] val maxConnections: Int = config.getInt("scala-nsq.max-connections")
+  private[nsq] val lookupAddressList: List[String] = config.getStringList("scala-nsq.lookup-address").toList
 
-  private[nsq] val bootstrap: Bootstrap = new Bootstrap()
-    .channel(classOf[NioSocketChannel])
-    .group(new NioEventLoopGroup(threads, new DefaultThreadFactory("nsq-client", true)))
+  private[nsq] val lookup = new NSQLookup(lookupAddressList)
+
+  private def newBootstrap = {
+    val threadFactory = new DefaultThreadFactory("nsq-client", true)
+    if (epoll && Epoll.isAvailable) {
+      new Bootstrap()
+        .channel(classOf[EpollSocketChannel])
+        .group(new EpollEventLoopGroup(threads, threadFactory))
+    } else {
+      new Bootstrap()
+        .channel(classOf[NioSocketChannel])
+        .group(new NioEventLoopGroup(threads, threadFactory))
+    }
+  }
+
+  private[nsq] val bootstrap: Bootstrap = newBootstrap
     .option[java.lang.Boolean](ChannelOption.SO_REUSEADDR, reuseAddress)
     .option[java.lang.Boolean](ChannelOption.SO_KEEPALIVE, keepAlive)
     .option[java.lang.Boolean](ChannelOption.TCP_NODELAY, tcpNoDelay)
@@ -190,17 +205,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
     .option[java.lang.Integer](ChannelOption.WRITE_BUFFER_HIGH_WATER_MARK, wbHigh)
     .option[java.lang.Integer](ChannelOption.WRITE_BUFFER_LOW_WATER_MARK, wbLow)
     .option[ByteBufAllocator](ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, new FixedRecvByteBufAllocator(rcvBuf))
-    .handler(new ChannelInitializer[SocketChannel] {
-      override def initChannel(ch: SocketChannel) = {
-        log.info("init channel: {}", ch)
-        val pipeline = ch.pipeline
-        pipeline.addLast("nsq-decoder", new NSQDecoder())
-        pipeline.addLast("nsq-encoder", new NSQEncoder())
-        pipeline.addLast("nsq-identity-handler", new NSQIdentifyHandler())
-        pipeline.addLast("nsq-handler", new NSQChannelInboundHandler())
-      }
-    })
+    .option[RecvByteBufAllocator](ChannelOption.RCVBUF_ALLOCATOR, AdaptiveRecvByteBufAllocator.DEFAULT)
 
   private[nsq] class NSQChannelInboundHandler extends SimpleChannelInboundHandler[NSQFrame] {
 
@@ -309,11 +314,19 @@ class NSQNettyClient(val config: Config) extends NSQClient {
   }
 
   def producer(): NSQProducer = {
-    new NSQNettyProducer()
+    val nsqProducer = new NSQNettyProducer()
+    lookup.nodes() foreach { address ⇒
+      nsqProducer.connect(address)
+    }
+    nsqProducer
   }
 
   def consumer(topic: String, channel: String = "default", consumer: NSQMessage ⇒ Unit): NSQConsumer = {
-    new NSQNettyConsumer(topic, channel, consumer)
+    val nsqConsumer = new NSQNettyConsumer(topic, channel, consumer)
+    lookup.lookup(topic) foreach { address ⇒
+      nsqConsumer.connect(address)
+    }
+    nsqConsumer
   }
 
   private[nsq] case class NSQMessageImpl(
@@ -354,12 +367,8 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       }
     }
 
-    def close() = {
-      poolMap.close()
-    }
-
-    def connect(host: String, port: Int): Unit = {
-      val pool = poolMap.get(new InetSocketAddress(host, port))
+    private[nsq] def connect(address: InetSocketAddress): Unit = {
+      val pool = poolMap.get(address)
       pool.acquire().addListener(new FutureListener[Channel] {
         override def operationComplete(future: NettyFuture[Channel]) = {
           if (future.isSuccess) {
@@ -374,7 +383,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       }).awaitUninterruptibly()
     }
 
-    private def connection[T](consumer: Channel ⇒ Future[T]): Future[T] = {
+    private[nsq] def connection[T](consumer: Channel ⇒ Future[T]): Future[T] = {
       val promise = Promise[T]()
       val pools = poolMap.iterator().map(_.getValue).toList
       val pool = pools.get(Random.nextInt(pools.size))
@@ -397,6 +406,10 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       promise.future
     }
 
+    def close() = {
+      poolMap.close()
+    }
+
     def pub(topic: String, data: Array[Byte]): Future[OK] = {
       connection { channel ⇒
         command(channel, PubCommand(topic, data)).mapTo[OK]
@@ -411,6 +424,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
   }
 
   private[nsq] class NSQNettyConsumer(topic: String, channel: String = "default", consumer: NSQMessage ⇒ Unit) extends NSQConsumer {
+
     private[nsq] class NSQConsumerChannelInboundHandler extends NSQChannelInboundHandler {
       override def channelActive(ctx: ChannelHandlerContext): Unit = {
         super.channelActive(ctx)
@@ -439,27 +453,27 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       }
     }
 
-    def close() = {
-      poolMap.close()
-    }
-
-    def connect(host: String, port: Int): Unit = {
-      val pool = poolMap.get(new InetSocketAddress(host, port))
+    private[nsq] def connect(address: InetSocketAddress): Unit = {
+      val pool = poolMap.get(address)
       pool.acquire()
         .addListener(new FutureListener[Channel] {
           override def operationComplete(future: NettyFuture[Channel]) = {
             if (future.isSuccess) {
               val channel = future.getNow
-              log.info(s"successfully connected to $host:$port")
+              log.info(s"successfully connected to {}", address)
               pool.release(channel)
             } else if (future.isCancelled) {
-              log.warn(s"error connect to $host:$port, canceled")
+              log.warn(s"error connect to {}, canceled", address)
             } else {
-              log.error(s"error connect to $host:$port", future.cause())
+              log.error(s"error connect to $address", future.cause())
             }
           }
         })
         .awaitUninterruptibly()
+    }
+
+    def close() = {
+      poolMap.close()
     }
 
     def ready(count: Int): Unit = {
