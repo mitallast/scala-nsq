@@ -11,14 +11,14 @@ import scala.concurrent.duration._
 class NSQClientSpec extends FlatSpec with Matchers {
 
   "nsq producer" should "connect and disconnect correctly" in {
-    val client = new NSQNettyClient(ConfigFactory.load("scala-nsq"))
+    val client = NSQClient()
     val producer = client.producer()
     producer.close()
     client.close()
   }
 
   it should "send pub command" in {
-    val client = new NSQNettyClient(ConfigFactory.load("scala-nsq"))
+    val client = NSQClient()
     val producer = client.producer()
     1 to 10 foreach { _ ⇒
       val future = producer.pubStr("scala.nsq.test", "hello world")
@@ -29,7 +29,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
   }
 
   it should "send mpub command" in {
-    val client = new NSQNettyClient(ConfigFactory.load("scala-nsq"))
+    val client = NSQClient()
     val producer = client.producer()
     val future = producer.mpubStr("scala.nsq.test", Array("hello world", "hello world"))
     Await.result(future, 10.seconds)
@@ -38,7 +38,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
   }
 
   "nsq consumer" should "connect and disconnect correctly" in {
-    val client = new NSQNettyClient(ConfigFactory.load("scala-nsq"))
+    val client = NSQClient()
     val consumer = client.consumer("scala.nsq.test", consumer = message ⇒ {})
     consumer.close()
     client.close()
@@ -46,7 +46,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
   it should "send rdy command" in {
     val queue = new LinkedBlockingQueue[NSQMessage](1)
-    val client = new NSQNettyClient(ConfigFactory.load("scala-nsq"))
+    val client = NSQClient()
     val consumer = client.consumer("scala.nsq.test", consumer = message ⇒ queue.offer(message))
     consumer.ready(1)
     val message = queue.poll(10, TimeUnit.SECONDS)
@@ -58,7 +58,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
   it should "send fin command" in {
     val queue = new LinkedBlockingQueue[NSQMessage](1)
-    val client = new NSQNettyClient(ConfigFactory.load("scala-nsq"))
+    val client = NSQClient()
     val consumer = client.consumer("scala.nsq.test", consumer = message ⇒ queue.offer(message))
     consumer.ready(1)
     val message = queue.poll(10, TimeUnit.SECONDS)
@@ -70,7 +70,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
   it should "send req command" in {
     val queue = new LinkedBlockingQueue[NSQMessage](1)
-    val client = new NSQNettyClient(ConfigFactory.load("scala-nsq"))
+    val client = NSQClient()
     val consumer = client.consumer("scala.nsq.test", consumer = message ⇒ queue.offer(message))
     consumer.ready(1)
     val message = queue.poll(10, TimeUnit.SECONDS)
@@ -82,7 +82,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
   it should "send touch command" in {
     val queue = new LinkedBlockingQueue[NSQMessage](1)
-    val client = new NSQNettyClient(ConfigFactory.load("scala-nsq"))
+    val client = NSQClient()
     val consumer = client.consumer("scala.nsq.test", consumer = message ⇒ queue.offer(message))
     consumer.ready(1)
     val message = queue.poll(10, TimeUnit.SECONDS)

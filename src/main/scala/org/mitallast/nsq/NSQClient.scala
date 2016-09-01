@@ -2,6 +2,7 @@ package org.mitallast.nsq
 
 import java.io.Closeable
 
+import com.typesafe.config.{Config, ConfigFactory}
 import io.netty.util.CharsetUtil
 import org.mitallast.nsq.protocol.OK
 
@@ -29,6 +30,13 @@ trait NSQClient extends Closeable {
   def producer(): NSQProducer
 
   def consumer(topic: String, channel: String = "default", consumer: NSQMessage ⇒ Unit): NSQConsumer
+}
+
+object NSQClient {
+
+  def apply(): NSQClient = new NSQNettyClient(ConfigFactory.load("scala-nsq"))
+
+  def apply(config: Config): NSQClient = new NSQNettyClient(config)
 }
 
 
