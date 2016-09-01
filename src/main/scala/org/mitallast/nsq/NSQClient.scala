@@ -2,6 +2,7 @@ package org.mitallast.nsq
 
 import java.io.Closeable
 
+import io.netty.util.CharsetUtil
 import org.mitallast.nsq.protocol.OK
 
 import scala.concurrent.Future
@@ -37,7 +38,15 @@ trait NSQProducer extends Closeable {
 
   def pub(topic: String, data: Array[Byte]): Future[OK]
 
+  def pubStr(topic: String, data: String): Future[OK] = {
+    pub(topic, data.getBytes(CharsetUtil.UTF_8))
+  }
+
   def mpub(topic: String, data: Seq[Array[Byte]]): Future[OK]
+
+  def mpubStr(topic: String, data: Seq[String]): Future[OK] = {
+    mpub(topic, data.map(_.getBytes(CharsetUtil.UTF_8)))
+  }
 }
 
 trait NSQConsumer extends Closeable {

@@ -1,6 +1,5 @@
 package org.mitallast.nsq.netty
 
-import java.nio.charset.Charset
 import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 
 import com.typesafe.config.ConfigFactory
@@ -25,7 +24,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
     val producer = client.producer()
     producer.connect("127.0.0.1", 4150)
     1 to 10 foreach { _ ⇒
-      val future = producer.pub("scala.nsq.test", "hello world".getBytes(Charset.forName("UTF-8")))
+      val future = producer.pubStr("scala.nsq.test", "hello world")
       Await.result(future, 10.seconds)
     }
     producer.close()
@@ -36,10 +35,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
     val client = new NSQNettyClient(ConfigFactory.load("scala-nsq"))
     val producer = client.producer()
     producer.connect("127.0.0.1", 4150)
-    val future = producer.mpub("scala.nsq.test", Array(
-      "hello world".getBytes(Charset.forName("UTF-8")),
-      "hello world".getBytes(Charset.forName("UTF-8"))
-    ))
+    val future = producer.mpubStr("scala.nsq.test", Array("hello world", "hello world"))
     Await.result(future, 10.seconds)
     producer.close()
     client.close()
@@ -47,8 +43,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
   "nsq consumer" should "connect and disconnect correctly" in {
     val client = new NSQNettyClient(ConfigFactory.load("scala-nsq"))
-    val consumer = client.consumer("scala.nsq.test", consumer = message ⇒ {
-    })
+    val consumer = client.consumer("scala.nsq.test", consumer = message ⇒ {})
     consumer.connect("127.0.0.1", 4150)
     consumer.close()
     client.close()

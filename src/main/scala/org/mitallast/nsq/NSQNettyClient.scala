@@ -14,7 +14,7 @@ import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.codec.compression.{SnappyFramedDecoder, SnappyFramedEncoder, ZlibCodecFactory, ZlibWrapper}
 import io.netty.handler.ssl.SslContextBuilder
-import io.netty.util.AttributeKey
+import io.netty.util.{AttributeKey, CharsetUtil}
 import io.netty.util.concurrent.{DefaultThreadFactory, FutureListener, Future ⇒ NettyFuture}
 import org.mitallast.nsq.protocol._
 import org.slf4j.LoggerFactory
@@ -166,7 +166,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
 
   config.checkValid(ConfigFactory.defaultReference(), "scala-nsq")
 
-  private[nsq] val V2 = "  V2".getBytes(Charset.forName("US-ASCII"))
+  private[nsq] val V2 = "  V2".getBytes(CharsetUtil.US_ASCII)
   private[nsq] val log = LoggerFactory.getLogger(getClass)
 
   private[nsq] val threads: Int = config.getInt("scala-nsq.threads")

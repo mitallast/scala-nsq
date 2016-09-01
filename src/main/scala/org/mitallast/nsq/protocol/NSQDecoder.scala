@@ -6,6 +6,7 @@ import java.util
 import io.netty.buffer.ByteBuf
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.ReplayingDecoder
+import io.netty.util.CharsetUtil
 import org.mitallast.nsq._
 import org.slf4j.LoggerFactory
 
@@ -49,12 +50,12 @@ private[nsq] class NSQDecoder extends ReplayingDecoder[STATE](HEADER) {
             }
           case 1 ⇒
             //subtract 4 because the frame id is included
-            val error = in.readSlice(size - 4).toString(Charset.forName("US-ASCII"))
+            val error = in.readSlice(size - 4).toString(CharsetUtil.US_ASCII)
             ErrorFrame(error)
           case 2 ⇒
             val timestamp = in.readLong()
             val attempts = in.readUnsignedShort()
-            val messageId = in.readSlice(16).toString(Charset.forName("US-ASCII"))
+            val messageId = in.readSlice(16).toString(CharsetUtil.US_ASCII)
             //subtract 4 because the frame id is included
             val data = new Array[Byte](size - 4 - 8 - 2 - 16)
             in.readBytes(data)
