@@ -1,6 +1,6 @@
 package org.mitallast.nsq
 
-import java.net.{HttpURLConnection, InetSocketAddress, URL}
+import java.net.{HttpURLConnection, InetSocketAddress, SocketAddress, URL}
 
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
@@ -10,7 +10,7 @@ class NSQLookup(addresses: List[String]) {
   private val log = LoggerFactory.getLogger(getClass)
   private implicit val formats = DefaultFormats
 
-  def lookup(topic: String): List[InetSocketAddress] = {
+  def lookup(topic: String): List[SocketAddress] = {
     addresses.flatMap { address ⇒
       try {
         val url = new URL(address)
@@ -46,7 +46,7 @@ class NSQLookup(addresses: List[String]) {
     }
   }
 
-  def nodes(): List[InetSocketAddress] = {
+  def nodes(): List[SocketAddress] = {
     addresses.flatMap { address ⇒
       try {
 

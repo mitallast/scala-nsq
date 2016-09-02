@@ -1,6 +1,6 @@
 package org.mitallast.nsq
 
-import java.net.InetSocketAddress
+import java.net.SocketAddress
 import java.util.concurrent.ConcurrentLinkedQueue
 
 import com.typesafe.config.{Config, ConfigFactory}
@@ -181,9 +181,11 @@ class NSQNettyClient(val config: Config) extends NSQClient {
   private[nsq] val maxConnections: Int = config.getInt("scala-nsq.max-connections")
   private[nsq] val lookupAddressList: List[String] = config.getStringList("scala-nsq.lookup-address").toList
 
+  private[nsq] val nsqConfig = NSQConfig.default
+
   private[nsq] val lookup = new NSQLookup(lookupAddressList)
 
-  private def newBootstrap = {
+  private[nsq] def newBootstrap = {
     val threadFactory = new DefaultThreadFactory("nsq-client", true)
     if (epoll && Epoll.isAvailable) {
       new Bootstrap()
@@ -215,11 +217,10 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       log.info("channel active {}", ctx)
       super.channelActive(ctx)
       val responses = new ConcurrentLinkedQueue[(NSQCommand, Promise[NSQFrame])]()
-      val config = NSQConfig.default
       ctx.channel().attr(NSQConfig.attr).set(NSQConfig.default)
       ctx.channel().attr(NSQNettyClient.responsesAttr).set(responses)
       ctx.writeAndFlush(Unpooled.wrappedBuffer(V2))
-      ctx.writeAndFlush(IdentifyCommand(config))
+      ctx.writeAndFlush(IdentifyCommand(nsqConfig))
     }
 
     override def channelInactive(ctx: ChannelHandlerContext) = {
@@ -352,8 +353,8 @@ class NSQNettyClient(val config: Config) extends NSQClient {
 
   private[nsq] class NSQNettyProducer extends NSQProducer {
 
-    private val poolMap = new AbstractChannelPoolMap[InetSocketAddress, FixedChannelPool] {
-      override def newPool(key: InetSocketAddress): FixedChannelPool = {
+    private val poolMap = new AbstractChannelPoolMap[SocketAddress, FixedChannelPool] {
+      override def newPool(key: SocketAddress): FixedChannelPool = {
         new FixedChannelPool(bootstrap.remoteAddress(key), new AbstractChannelPoolHandler {
           override def channelCreated(ch: Channel): Unit = {
             log.info("channel created: {}", key)
@@ -367,7 +368,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       }
     }
 
-    private[nsq] def connect(address: InetSocketAddress): Unit = {
+    private[nsq] def connect(address: SocketAddress): Unit = {
       val pool = poolMap.get(address)
       pool.acquire().addListener(new FutureListener[Channel] {
         override def operationComplete(future: NettyFuture[Channel]) = {
@@ -438,8 +439,8 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       }
     }
 
-    private val poolMap = new AbstractChannelPoolMap[InetSocketAddress, FixedChannelPool] {
-      override def newPool(key: InetSocketAddress) = {
+    private val poolMap = new AbstractChannelPoolMap[SocketAddress, FixedChannelPool] {
+      override def newPool(key: SocketAddress) = {
         new FixedChannelPool(bootstrap.remoteAddress(key), new AbstractChannelPoolHandler {
           override def channelCreated(ch: Channel): Unit = {
             log.info("channel created: {}", key)
@@ -453,7 +454,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       }
     }
 
-    private[nsq] def connect(address: InetSocketAddress): Unit = {
+    private[nsq] def connect(address: SocketAddress): Unit = {
       val pool = poolMap.get(address)
       pool.acquire()
         .addListener(new FutureListener[Channel] {

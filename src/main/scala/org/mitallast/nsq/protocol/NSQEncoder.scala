@@ -14,8 +14,9 @@ private[nsq] class NSQEncoder extends MessageToMessageEncoder[NSQCommand] {
         val json = ctx.alloc().buffer()
         cmd.config.toJson(json)
         buf.writeInt(json.readableBytes())
+        buf.writeBytes(json)
+        json.release()
         out.add(buf)
-        out.add(json)
       case cmd: SubCommand ⇒
         val size = cmd.topic.length + cmd.channel.length + 6
         val buf = ctx.alloc().buffer(size)
