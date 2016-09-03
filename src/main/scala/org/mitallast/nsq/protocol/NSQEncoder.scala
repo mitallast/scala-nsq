@@ -12,7 +12,7 @@ private[nsq] class NSQEncoder extends MessageToMessageEncoder[NSQCommand] {
         val buf = ctx.alloc().buffer(14)
         "IDENTIFY\n".foreach(buf.writeByte(_))
         val json = ctx.alloc().buffer()
-        cmd.config.toJson(json)
+        cmd.config.asJson(json)
         buf.writeInt(json.readableBytes())
         buf.writeBytes(json)
         json.release()

@@ -2,8 +2,10 @@ package org.mitallast.nsq.protocol
 
 import java.net.InetAddress
 
-import io.netty.buffer.ByteBuf
+import io.netty.buffer.{ByteBuf, ByteBufOutputStream}
 import io.netty.util.AttributeKey
+import org.json4s.JsonDSL._
+import org.json4s.jackson.JsonMethods._
 
 /**
   *
@@ -11,10 +13,9 @@ import io.netty.util.AttributeKey
   * @param hostname            the hostname where the client is deployed
   * @param userAgent           (nsqd v0.2.25+) a string identifying the agent for this client in the spirit of HTTP
   *                            Default: <client_library_name>/<version>
-  * @param compression         snappy (nsqd v0.2.23+) enable snappy compression for this connection.
+  * @param snappy              snappy (nsqd v0.2.23+) enable snappy compression for this connection.
   *                            --snappy (nsqd flag) enables support for this server side
-  *
-  *                            deflate (nsqd v0.2.23+) enable deflate compression for this connection.
+  * @param deflate             deflate (nsqd v0.2.23+) enable deflate compression for this connection.
   *                            --deflate (nsqd flag) enables support for this server side
   *
   *                            The client should expect an additional, deflate compressed OK response immediately after
@@ -60,40 +61,38 @@ case class NSQConfig(
   clientId: String,
   hostname: String,
   userAgent: String,
-  compression: String = "NONE",
   featureNegotiation: Boolean = true,
   heartbeatInterval: Option[Int] = None,
   outputBufferSize: Option[Int] = None,
   outputBufferTimeout: Option[Int] = None,
   tlsV1: Option[Boolean] = None,
+  snappy: Option[Boolean] = None,
+  deflate: Option[Boolean] = None,
   deflateLevel: Option[Int] = None,
   sampleRate: Option[Int] = None,
   msgTimeout: Option[Int] = None
 ) {
 
-  def toJson(out: ByteBuf) = {
-    val json = JsonBuf(out)
-    json.field("client_id").value(clientId)
-    json.field("hostname").value(hostname)
-    json.field("feature_negotiation").value(featureNegotiation)
-    json.putInt("heartbeat_interval", heartbeatInterval)
-    json.putInt("output_buffer_size", outputBufferSize)
-    json.putInt("output_buffer_timeout", outputBufferTimeout)
-    json.putBoolean("tls_v1", tlsV1)
-    compression match {
-      case "SNAPPY" ⇒ json.field("snappy").value(true)
-      case "DEFLATE" ⇒ json.field("snappy").value(true)
-      case _ ⇒ // ignore
-    }
-    json.putInt("deflate_level", deflateLevel)
-    json.putInt("sample_rate", sampleRate)
-    json.putInt("msg_timeout", msgTimeout)
-    json.field("user_agent").value(userAgent)
-    json.close
+  def asJson(out: ByteBuf) = {
+    val json = ("client_id" → clientId) ~
+      ("hostname" → hostname) ~
+      ("feature_negotiation" → featureNegotiation) ~
+      ("heartbeat_interval" → heartbeatInterval) ~
+      ("output_buffer_size" → outputBufferSize) ~
+      ("output_buffer_timeout" → outputBufferTimeout) ~
+      ("tls_v1" → tlsV1) ~
+      ("snappy" → snappy) ~
+      ("deflate" → deflate) ~
+      ("deflate_level" → deflateLevel) ~
+      ("sample_rate" → sampleRate) ~
+      ("msg_timeout" → msgTimeout) ~
+      ("user_agent" → userAgent)
+
+    mapper.writeValue(new ByteBufOutputStream(out), json)
   }
 }
 
-private [nsq] object NSQConfig {
+private[nsq] object NSQConfig {
 
   val attr = AttributeKey.valueOf[NSQConfig]("nsq-config")
 
