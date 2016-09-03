@@ -69,7 +69,7 @@ object NSQClientSpec {
       override def lookup(topic: String) = List(localAddr)
     }
 
-    override def close(): Unit = bootstrap.group().shutdownGracefully(0, 0, TimeUnit.MICROSECONDS)
+    override def close(): Unit = bootstrap.group().shutdownGracefully(10, 10, TimeUnit.MILLISECONDS).sync()
   }
 
   case class LocalNSQNettyServer() {
@@ -96,6 +96,7 @@ object NSQClientSpec {
 
     def close() = {
       channel.close().sync()
+      bootstrap.group().shutdownGracefully(10, 10, TimeUnit.MILLISECONDS).sync()
     }
 
     def handle = request.poll(1, MINUTES)
@@ -119,7 +120,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.send()
 
     server.handle shouldEqual requestBuf("IDENTIFY\n", json)
-    server.send(responseBuf("{}"))
+    server.send(responseBuf("OK"))
 
     producer.close()
     client.close()
@@ -134,7 +135,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.handle
     server.send()
     server.handle
-    server.send(responseBuf("{}"))
+    server.send(responseBuf("OK"))
 
     val future = producer.pubStr("test", "hello")
 
@@ -158,7 +159,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.handle
     server.send()
     server.handle
-    server.send(responseBuf("{}"))
+    server.send(responseBuf("OK"))
 
     val future = producer.mpubStr("scala.nsq.test", Array("hello", "world"))
 
@@ -184,7 +185,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.send()
 
     server.handle shouldEqual requestBuf("IDENTIFY\n", json)
-    server.send(responseBuf("{}"))
+    server.send(responseBuf("OK"))
 
     server.handle shouldEqual buf("SUB scala.nsq.test default\n")
     server.send()
@@ -204,7 +205,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.handle
     server.send()
     server.handle
-    server.send(responseBuf("{}"))
+    server.send(responseBuf("OK"))
     server.handle
     server.send()
 
@@ -232,7 +233,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.handle
     server.send()
     server.handle
-    server.send(responseBuf("{}"))
+    server.send(responseBuf("OK"))
     server.handle
     server.send()
 
@@ -261,7 +262,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.handle
     server.send()
     server.handle
-    server.send(responseBuf("{}"))
+    server.send(responseBuf("OK"))
     server.handle
     server.send()
 
@@ -290,7 +291,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.handle
     server.send()
     server.handle
-    server.send(responseBuf("{}"))
+    server.send(responseBuf("OK"))
     server.handle
     server.send()
 

@@ -22,6 +22,9 @@ import scala.collection.JavaConversions._
 import scala.concurrent.{CancellationException, Future, Promise}
 import scala.util.Random
 
+import org.json4s._
+import org.json4s.jackson.JsonMethods._
+
 private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFrame] {
 
   val SSL_HANDLER = "nsq-ssl-handler"
@@ -39,6 +42,8 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
   private var snappy: Boolean = false
   private var deflate: Boolean = false
   private var finished: Boolean = false
+
+  private implicit val formats = DefaultFormats
 
   override def channelRead0(ctx: ChannelHandlerContext, msg: NSQFrame) {
     log.info("frame: {}", msg)
@@ -102,7 +107,6 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
 
       case _ ⇒ ctx.fireChannelRead(msg)
     }
-
   }
 
   private def eject(reinstallDefaultDecoder: Boolean, pipeline: ChannelPipeline) = {
@@ -139,16 +143,25 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
     if (message.equals("OK")) {
       return
     }
-    if (message.contains("\"tls_v1\":true")) {
-      ssl = true
-    }
-    if (message.contains("\"snappy\":true")) {
-      snappy = true
-      compression = true
-    }
-    if (message.contains("\"deflate\":true")) {
-      deflate = true
-      compression = true
+    else if (message.startsWith("{")) {
+      val json = parse(StringInput(message))
+
+      def check(field: String) = json.findField {
+        case JField("name", JBool.True) ⇒ true
+        case _ ⇒ false
+      }.nonEmpty
+
+      if (check("tls_v1")) {
+        ssl = true
+      }
+      if (check("snappy")) {
+        snappy = true
+        compression = true
+      }
+      if (check("deflate")) {
+        deflate = true
+        compression = true
+      }
     }
     if (!ssl && !compression) {
       finished = true
