@@ -50,8 +50,20 @@ private[nsq] class NSQDecoder extends ReplayingDecoder[STATE](HEADER) {
             }
           case 1 ⇒
             //subtract 4 because the frame id is included
-            val error = in.readSlice(size - 4).toString(CharsetUtil.US_ASCII)
-            ErrorFrame(error)
+            in.readSlice(size - 4).toString(CharsetUtil.US_ASCII) match {
+              case NSQError.E_INVALID ⇒ new NSQErrorInvalid()
+              case NSQError.E_BAD_BODY ⇒ new NSQErrorBadBody()
+              case NSQError.E_BAD_TOPIC ⇒ new NSQErrorBadTopic()
+              case NSQError.E_BAD_CHANNEL ⇒ new NSQErrorBadChannel()
+              case NSQError.E_PUB_FAILED ⇒ new NSQErrorPubFailed()
+              case NSQError.E_MPUB_FAILED ⇒ new NSQErrorMpubFailed()
+              case NSQError.E_FIN_FAILED ⇒ new NSQErrorFinFailed()
+              case NSQError.E_REQ_FAILED ⇒ new NSQErrorReqFailed()
+              case NSQError.E_TOUCH_FAILED ⇒ new NSQErrorTouchFailed()
+              case NSQError.E_AUTH_FAILED ⇒ new NSQErrorAuthFailed()
+              case NSQError.E_UNAUTHORIZED ⇒ new NSQErrorUnauthorized()
+              case error ⇒ new NSQProtocolException(error)
+            }
           case 2 ⇒
             val timestamp = in.readLong()
             val attempts = in.readUnsignedShort()
@@ -61,10 +73,9 @@ private[nsq] class NSQDecoder extends ReplayingDecoder[STATE](HEADER) {
             in.readBytes(data)
             MessageFrame(timestamp, attempts, messageId, data)
           case _ ⇒
-            throw new ProtocolException(s"bad frame id from server: [$id]")
+            throw new NSQProtocolException(s"bad frame id from server: [$id]")
         }
         checkpoint(HEADER)
-        log.info("frame: {}", frame)
         out.add(frame)
     }
   }
