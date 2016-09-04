@@ -246,16 +246,24 @@ class NSQNettyClient(val config: Config) extends NSQClient {
         responses.poll() match {
           case null ⇒ // ignore
           case (cmd, promise) ⇒
-            log.warn("cancel task {}", cmd)
-            promise.failure(new CancellationException())
+            log.warn("failed task {}", cmd)
+            promise.failure(new NSQDisconnected("channel closed"))
         }
       }
     }
 
     override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) = {
-      super.exceptionCaught(ctx, cause)
       log.warn("exception caught", cause)
       ctx.channel().close()
+      val responses = ctx.channel().attr(NSQNettyClient.responsesAttr).get()
+      while (responses.nonEmpty) {
+        responses.poll() match {
+          case null ⇒ // ignore
+          case (cmd, promise) ⇒
+            log.warn("failed task {}", cmd)
+            promise.failure(cause)
+        }
+      }
     }
 
     override def channelRead0(ctx: ChannelHandlerContext, frame: NSQFrame) = {
@@ -276,12 +284,75 @@ class NSQNettyClient(val config: Config) extends NSQClient {
             }
           }
 
-        case error: ErrorFrame ⇒
+        case ErrorFrame(error) ⇒
           val responses = ctx.channel().attr(NSQNettyClient.responsesAttr).get()
-          responses.poll() match {
-            case null ⇒ // ignore
-            case (cmd, promise) ⇒
-              promise.failure(new NSQException(error.message))
+          error match {
+
+            // should close channel on fatal errors
+
+            case error: NSQErrorAuthFailed ⇒
+              exceptionCaught(ctx, error)
+            case error: NSQErrorUnauthorized ⇒
+              exceptionCaught(ctx, error)
+            case error: NSQErrorInvalid ⇒
+              exceptionCaught(ctx, error)
+
+            // handle specific errors
+
+            case error: NSQErrorBadBody ⇒
+              responses.poll() match {
+                case (_: IdentifyCommand, promise) ⇒ promise.failure(error)
+                case (_: MPubCommand, promise) ⇒ promise.failure(error)
+                case _ ⇒ exceptionCaught(ctx, error)
+              }
+            case error: NSQErrorBadMessage ⇒
+              responses.poll() match {
+                case (_: PubCommand, promise) ⇒ promise.failure(error)
+                case (_: MPubCommand, promise) ⇒ promise.failure(error)
+                case _ ⇒ exceptionCaught(ctx, error)
+              }
+            case error: NSQErrorBadTopic ⇒
+              responses.poll() match {
+                case (_: SubCommand, promise) ⇒ promise.failure(error)
+                case (_: PubCommand, promise) ⇒ promise.failure(error)
+                case (_: MPubCommand, promise) ⇒ promise.failure(error)
+                case _ ⇒ exceptionCaught(ctx, error)
+              }
+            case error: NSQErrorBadChannel ⇒
+              responses.poll() match {
+                case (_: SubCommand, promise) ⇒ promise.failure(error)
+                case (_: PubCommand, promise) ⇒ promise.failure(error)
+                case (_: MPubCommand, promise) ⇒ promise.failure(error)
+                case _ ⇒ exceptionCaught(ctx, error)
+              }
+            case error: NSQErrorPubFailed ⇒
+              responses.poll() match {
+                case (_: PubCommand, promise) ⇒ promise.failure(error)
+                case _ ⇒ exceptionCaught(ctx, error)
+              }
+            case error: NSQErrorMpubFailed ⇒
+              responses.poll() match {
+                case (_: MPubCommand, promise) ⇒ promise.failure(error)
+                case _ ⇒ exceptionCaught(ctx, error)
+              }
+
+            // @todo FIN, REQ, TOUCH commands have not promises on write
+
+            case error: NSQErrorFinFailed ⇒
+              responses.poll() match {
+                case (_: FinCommand, promise) ⇒ promise.failure(error)
+                case _ ⇒ exceptionCaught(ctx, error)
+              }
+            case error: NSQErrorReqFailed ⇒
+              responses.poll() match {
+                case (_: ReqCommand, promise) ⇒ promise.failure(error)
+                case _ ⇒ exceptionCaught(ctx, error)
+              }
+            case error: NSQErrorTouchFailed ⇒
+              responses.poll() match {
+                case (_: TouchCommand, promise) ⇒ promise.failure(error)
+                case _ ⇒ exceptionCaught(ctx, error)
+              }
           }
 
         case message: MessageFrame ⇒
@@ -387,7 +458,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
 
   private[nsq] class NSQNettyProducer extends NSQProducer {
 
-    private val poolMap = new AbstractChannelPoolMap[SocketAddress, FixedChannelPool] {
+    private [nsq] val poolMap = new AbstractChannelPoolMap[SocketAddress, FixedChannelPool] {
       override def newPool(key: SocketAddress): FixedChannelPool = {
         new FixedChannelPool(bootstrap.remoteAddress(key), new AbstractChannelPoolHandler {
           override def channelCreated(ch: Channel): Unit = {

@@ -8,100 +8,58 @@ class NSQDecoderSpec extends FlatSpec with Matchers {
 
   import NSQProtocol._
 
-  "nsq decoder" should "decode E_INVALID" in {
+  def decodeError(error: String) = {
     val channel = new EmbeddedChannel(new NSQDecoder)
-    an[NSQErrorInvalid] should be thrownBy {
-      channel.writeInbound(errorBuf(NSQError.E_INVALID))
-      throw channel.readInbound().asInstanceOf[Exception]
-    }
+    channel.writeInbound(errorBuf(error))
+    throw channel.readInbound().asInstanceOf[ErrorFrame].error
+  }
+
+  "nsq decoder" should "decode E_INVALID" in {
+    an[NSQErrorInvalid] should be thrownBy decodeError(NSQError.E_INVALID)
   }
 
   it should "decode E_BAD_BODY" in {
-    val channel = new EmbeddedChannel(new NSQDecoder)
-    an[NSQErrorBadBody] should be thrownBy {
-      channel.writeInbound(errorBuf(NSQError.E_BAD_BODY))
-      throw channel.readInbound().asInstanceOf[Exception]
-    }
+    an[NSQErrorBadBody] should be thrownBy decodeError(NSQError.E_BAD_BODY)
   }
 
   it should "decode E_BAD_TOPIC" in {
-    val channel = new EmbeddedChannel(new NSQDecoder)
-    an[NSQErrorBadTopic] should be thrownBy {
-      channel.writeInbound(errorBuf(NSQError.E_BAD_TOPIC))
-      throw channel.readInbound().asInstanceOf[Exception]
-    }
+    an[NSQErrorBadTopic] should be thrownBy decodeError(NSQError.E_BAD_TOPIC)
   }
 
   it should "decode E_BAD_CHANNEL" in {
-    val channel = new EmbeddedChannel(new NSQDecoder)
-    an[NSQErrorBadChannel] should be thrownBy {
-      channel.writeInbound(errorBuf(NSQError.E_BAD_CHANNEL))
-      throw channel.readInbound().asInstanceOf[Exception]
-    }
+    an[NSQErrorBadChannel] should be thrownBy decodeError(NSQError.E_BAD_CHANNEL)
   }
 
   it should "decode E_PUB_FAILED" in {
-    val channel = new EmbeddedChannel(new NSQDecoder)
-    an[NSQErrorPubFailed] should be thrownBy {
-      channel.writeInbound(errorBuf(NSQError.E_PUB_FAILED))
-      throw channel.readInbound().asInstanceOf[Exception]
-    }
+    an[NSQErrorPubFailed] should be thrownBy decodeError(NSQError.E_PUB_FAILED)
   }
 
   it should "decode E_MPUB_FAILED" in {
-    val channel = new EmbeddedChannel(new NSQDecoder)
-    an[NSQErrorMpubFailed] should be thrownBy {
-      channel.writeInbound(errorBuf(NSQError.E_MPUB_FAILED))
-      throw channel.readInbound().asInstanceOf[Exception]
-    }
+    an[NSQErrorMpubFailed] should be thrownBy decodeError(NSQError.E_MPUB_FAILED)
   }
 
   it should "decode E_FIN_FAILED" in {
-    val channel = new EmbeddedChannel(new NSQDecoder)
-    an[NSQErrorFinFailed] should be thrownBy {
-      channel.writeInbound(errorBuf(NSQError.E_FIN_FAILED))
-      throw channel.readInbound().asInstanceOf[Exception]
-    }
+    an[NSQErrorFinFailed] should be thrownBy decodeError(NSQError.E_FIN_FAILED)
   }
 
   it should "decode E_REQ_FAILED" in {
-    val channel = new EmbeddedChannel(new NSQDecoder)
-    an[NSQErrorReqFailed] should be thrownBy {
-      channel.writeInbound(errorBuf(NSQError.E_REQ_FAILED))
-      throw channel.readInbound().asInstanceOf[Exception]
-    }
+    an[NSQErrorReqFailed] should be thrownBy decodeError(NSQError.E_REQ_FAILED)
   }
 
   it should "decode E_TOUCH_FAILED" in {
-    val channel = new EmbeddedChannel(new NSQDecoder)
-    an[NSQErrorTouchFailed] should be thrownBy {
-      channel.writeInbound(errorBuf(NSQError.E_TOUCH_FAILED))
-      throw channel.readInbound().asInstanceOf[Exception]
-    }
+    an[NSQErrorTouchFailed] should be thrownBy decodeError(NSQError.E_TOUCH_FAILED)
   }
 
   it should "decode E_AUTH_FAILED" in {
-    val channel = new EmbeddedChannel(new NSQDecoder)
-    an[NSQErrorAuthFailed] should be thrownBy {
-      channel.writeInbound(errorBuf(NSQError.E_AUTH_FAILED))
-      throw channel.readInbound().asInstanceOf[Exception]
-    }
+    an[NSQErrorAuthFailed] should be thrownBy decodeError(NSQError.E_AUTH_FAILED)
   }
 
   it should "decode E_UNAUTHORIZED" in {
-    val channel = new EmbeddedChannel(new NSQDecoder)
-    an[NSQErrorUnauthorized] should be thrownBy {
-      channel.writeInbound(errorBuf(NSQError.E_UNAUTHORIZED))
-      throw channel.readInbound().asInstanceOf[Exception]
-    }
+    an[NSQErrorUnauthorized] should be thrownBy decodeError(NSQError.E_UNAUTHORIZED)
   }
 
   it should "decode unexpected error" in {
-    val channel = new EmbeddedChannel(new NSQDecoder)
-    an[NSQProtocolException] should be thrownBy {
-      channel.writeInbound(errorBuf("UNEXPECTED"))
-      throw channel.readInbound().asInstanceOf[Exception]
-    }
+    an[NSQProtocolError] should be thrownBy decodeError("UNEXPECTED")
   }
 
   it should "decode OK response" in {

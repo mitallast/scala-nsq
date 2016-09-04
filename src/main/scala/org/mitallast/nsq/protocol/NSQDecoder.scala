@@ -1,6 +1,5 @@
 package org.mitallast.nsq.protocol
 
-import java.nio.charset.Charset
 import java.util
 
 import io.netty.buffer.ByteBuf
@@ -29,7 +28,7 @@ private[nsq] class NSQDecoder extends ReplayingDecoder[STATE](HEADER) {
         id = in.readInt()
         checkpoint(BODY)
       case BODY ⇒
-        val frame = id match {
+        val frame: NSQFrame = id match {
           case 0 ⇒
             //subtract 4 because the frame id is included
             val pos = in.readerIndex()
@@ -50,7 +49,7 @@ private[nsq] class NSQDecoder extends ReplayingDecoder[STATE](HEADER) {
             }
           case 1 ⇒
             //subtract 4 because the frame id is included
-            in.readSlice(size - 4).toString(CharsetUtil.US_ASCII) match {
+            val error = in.readSlice(size - 4).toString(CharsetUtil.US_ASCII) match {
               case NSQError.E_INVALID ⇒ new NSQErrorInvalid()
               case NSQError.E_BAD_BODY ⇒ new NSQErrorBadBody()
               case NSQError.E_BAD_TOPIC ⇒ new NSQErrorBadTopic()
@@ -62,8 +61,9 @@ private[nsq] class NSQDecoder extends ReplayingDecoder[STATE](HEADER) {
               case NSQError.E_TOUCH_FAILED ⇒ new NSQErrorTouchFailed()
               case NSQError.E_AUTH_FAILED ⇒ new NSQErrorAuthFailed()
               case NSQError.E_UNAUTHORIZED ⇒ new NSQErrorUnauthorized()
-              case error ⇒ new NSQProtocolException(error)
+              case msg ⇒ new NSQProtocolError(msg)
             }
+            ErrorFrame(error)
           case 2 ⇒
             val timestamp = in.readLong()
             val attempts = in.readUnsignedShort()
@@ -73,7 +73,7 @@ private[nsq] class NSQDecoder extends ReplayingDecoder[STATE](HEADER) {
             in.readBytes(data)
             MessageFrame(timestamp, attempts, messageId, data)
           case _ ⇒
-            throw new NSQProtocolException(s"bad frame id from server: [$id]")
+            throw new NSQProtocolError(s"bad frame id from server: [$id]")
         }
         checkpoint(HEADER)
         out.add(frame)

@@ -47,7 +47,10 @@ object NSQLocalClient {
             override def channelRead0(ctx: ChannelHandlerContext, msg: ByteBuf) = {
               log.info("message received: {}", msg.readableBytes())
               request.offer(msg)
-              response.poll(1, MINUTES).foreach(ctx.writeAndFlush(_))
+              response.poll(1, MINUTES).foreach(msg ⇒ {
+                log.info("response: {}", msg.readableBytes())
+                ctx.writeAndFlush(msg)
+              })
             }
           })
         }

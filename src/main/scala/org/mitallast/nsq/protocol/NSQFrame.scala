@@ -1,10 +1,10 @@
 package org.mitallast.nsq.protocol
 
-import java.nio.charset.Charset
 import java.util
 
 import io.netty.buffer.Unpooled
 import io.netty.util.CharsetUtil
+import org.mitallast.nsq.NSQError
 
 private [nsq] sealed trait NSQFrame
 private [nsq] sealed trait NSQResponseFrame extends NSQFrame
@@ -27,6 +27,6 @@ private [nsq] case class ResponseFrame(data: Array[Byte]) extends NSQResponseFra
   }
 }
 
-private [nsq] case class ErrorFrame(message: String) extends NSQFrame
+private [nsq] case class ErrorFrame(error: NSQError) extends NSQFrame
 
 private [nsq] case class MessageFrame(timestamp: Long, attempts: Int, messageId: String, data: Array[Byte]) extends NSQFrame

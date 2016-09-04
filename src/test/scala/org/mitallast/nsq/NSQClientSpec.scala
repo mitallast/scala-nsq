@@ -78,6 +78,73 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.close()
   }
 
+  it should "handle E_INVALID error" in {
+    val server = LocalNSQNettyServer()
+    val client = LocalNSQNettyClient()
+    val producer = client.producer()
+
+    server.handle
+    server.send()
+    server.handle
+    server.send(responseBuf("OK"))
+
+    val future = producer.pubStr("test", "message")
+
+    server.handle
+    server.send(errorBuf(NSQError.E_INVALID))
+
+    an[NSQErrorInvalid] should be thrownBy Await.result(future, 10.seconds)
+
+    producer.close()
+    client.close()
+    server.close()
+  }
+
+  it should "cancel futures on close server channel" in {
+    val server = LocalNSQNettyServer()
+    val client = LocalNSQNettyClient()
+    val producer = client.producer()
+
+    server.handle
+    server.send()
+    server.handle
+    server.send(responseBuf("OK"))
+
+    val future = producer.pubStr("test", "message")
+
+    server.handle
+    server.send()
+    server.close()
+
+    an[NSQDisconnected] should be thrownBy Await.result(future, 10.seconds)
+
+    producer.close()
+    client.close()
+  }
+
+  it should "cancel futures on close client channel" in {
+    val server = LocalNSQNettyServer()
+    val client = LocalNSQNettyClient()
+    val producer = client.producer()
+
+    server.handle
+    server.send()
+    server.handle
+    server.send(responseBuf("OK"))
+
+    val future = producer.pubStr("test", "message")
+
+    server.handle
+    server.send()
+
+    producer.close()
+
+    an[NSQDisconnected] should be thrownBy Await.result(future, 10.seconds)
+
+    client.close()
+    server.close()
+  }
+
   "nsq consumer" should "init connection" in {
     val server = LocalNSQNettyServer()
     val client = LocalNSQNettyClient()
