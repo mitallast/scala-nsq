@@ -1,6 +1,7 @@
 package org.mitallast.nsq.protocol
 
 import java.nio.charset.Charset
+import java.util
 
 import io.netty.buffer.Unpooled
 import io.netty.util.CharsetUtil
@@ -14,6 +15,16 @@ private [nsq] case object CloseWait extends NSQResponseFrame
 
 private [nsq] case class ResponseFrame(data: Array[Byte]) extends NSQResponseFrame {
   lazy val message = Unpooled.wrappedBuffer(data).toString(CharsetUtil.UTF_8)
+
+
+  override def canEqual(that: Any): Boolean = that.isInstanceOf[ResponseFrame]
+
+  override def equals(that: scala.Any): Boolean = {
+    that match {
+      case that: ResponseFrame ⇒ that.canEqual(that) && util.Arrays.equals(that.data, data)
+      case _ ⇒ false
+    }
+  }
 }
 
 private [nsq] case class ErrorFrame(message: String) extends NSQFrame
