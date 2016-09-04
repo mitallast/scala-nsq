@@ -7,6 +7,7 @@ import io.netty.util.CharsetUtil
 import org.mitallast.nsq.protocol.OK
 
 import scala.concurrent.Future
+import scala.concurrent.duration.Duration
 
 trait NSQMessage {
 
@@ -23,6 +24,8 @@ trait NSQMessage {
   def req(timeout: Int): Unit
 
   def touch(): Unit
+
+  def touch(duration: Duration): Unit
 }
 
 trait NSQClient extends Closeable {

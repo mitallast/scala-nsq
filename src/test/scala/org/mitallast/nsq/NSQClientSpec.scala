@@ -212,4 +212,45 @@ class NSQClientSpec extends FlatSpec with Matchers {
     client.close()
     server.close()
   }
+
+  it should "schedule send touch command" in {
+    val server = LocalNSQNettyServer()
+    val client = LocalNSQNettyClient()
+
+    val queue = new LinkedBlockingQueue[NSQMessage](1)
+    val consumer = client.consumer("scala.nsq.test", consumer = queue.offer(_))
+
+    server.handle
+    server.send()
+    server.handle
+    server.send(responseBuf("OK"))
+    server.handle
+    server.send()
+
+    consumer.ready(1)
+
+    server.handle
+    server.send(messageBuf("hello"))
+
+    val message = queue.poll(10, TimeUnit.SECONDS)
+    message.touch(100.millis)
+
+    server.handle shouldEqual buf(s"TOUCH $messageId\n")
+    server.send()
+
+    server.handle shouldEqual buf(s"TOUCH $messageId\n")
+    server.send()
+
+    server.handle shouldEqual buf(s"TOUCH $messageId\n")
+    server.send()
+
+    message.fin()
+
+    server.handle
+    server.send()
+
+    consumer.close()
+    client.close()
+    server.close()
+  }
 }

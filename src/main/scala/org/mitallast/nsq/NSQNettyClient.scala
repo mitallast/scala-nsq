@@ -1,7 +1,7 @@
 package org.mitallast.nsq
 
 import java.net.SocketAddress
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.{ConcurrentLinkedQueue, TimeUnit}
 
 import com.typesafe.config.{Config, ConfigFactory}
 import io.netty.bootstrap.Bootstrap
@@ -13,7 +13,7 @@ import io.netty.channel.pool._
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.codec.compression.{SnappyFramedDecoder, SnappyFramedEncoder, ZlibCodecFactory, ZlibWrapper}
 import io.netty.handler.ssl.SslContextBuilder
-import io.netty.util.concurrent.{DefaultThreadFactory, FutureListener, Future ⇒ NettyFuture}
+import io.netty.util.concurrent.{DefaultThreadFactory, FutureListener, ScheduledFuture, Future ⇒ NettyFuture}
 import io.netty.util.{AttributeKey, CharsetUtil}
 import org.mitallast.nsq.protocol._
 import org.slf4j.LoggerFactory
@@ -21,9 +21,10 @@ import org.slf4j.LoggerFactory
 import scala.collection.JavaConversions._
 import scala.concurrent.{CancellationException, Future, Promise}
 import scala.util.Random
-
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
+
+import scala.concurrent.duration.Duration
 
 private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFrame] {
 
@@ -351,16 +352,36 @@ class NSQNettyClient(val config: Config) extends NSQClient {
     ctx: ChannelHandlerContext
   ) extends NSQMessage {
 
+    private[nsq] var touchTask: ScheduledFuture[_] = _
+
     def fin() = {
+      cancelTouch()
       ctx.writeAndFlush(FinCommand(messageId))
     }
 
     def req(timeout: Int) = {
+      cancelTouch()
       ctx.writeAndFlush(ReqCommand(messageId, timeout))
     }
 
     def touch() = {
+      cancelTouch()
       ctx.writeAndFlush(TouchCommand(messageId))
+    }
+
+    def touch(duration: Duration) = {
+      cancelTouch()
+      touchTask = ctx.executor().scheduleAtFixedRate(new Runnable {
+        override def run() = {
+          ctx.writeAndFlush(TouchCommand(messageId))
+        }
+      }, duration.toMillis, duration.toMillis, TimeUnit.MILLISECONDS)
+    }
+
+    private def cancelTouch(): Unit = {
+      if (touchTask != null) {
+        touchTask.cancel(false)
+      }
     }
   }
 
