@@ -288,33 +288,31 @@ class NSQNettyClient(val config: Config) extends NSQClient {
           val responses = ctx.channel().attr(NSQNettyClient.responsesAttr).get()
           (error, responses.poll()) match {
             // handle specific errors related to commands
-            case (error: NSQErrorBadBody, (_: IdentifyCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorBadBody, (_: MPubCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorBadMessage, (_: PubCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorBadMessage, (_: MPubCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorBadTopic, (_: SubCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorBadTopic, (_: PubCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorBadTopic, (_: MPubCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorBadChannel, (_: SubCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorBadChannel, (_: PubCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorBadChannel, (_: MPubCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorBadChannel, (_: MPubCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorPubFailed, (_: PubCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorMpubFailed, (_: MPubCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorMpubFailed, (_: MPubCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorBadBody, (_: IdentifyCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorBadBody, (_: MPubCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorBadMessage, (_: PubCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorBadMessage, (_: MPubCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorBadTopic, (_: SubCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorBadTopic, (_: PubCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorBadTopic, (_: MPubCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorBadChannel, (_: SubCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorBadChannel, (_: PubCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorBadChannel, (_: MPubCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorPubFailed, (_: PubCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorMpubFailed, (_: MPubCommand, promise)) ⇒ promise.failure(error)
 
             // FIN, REQ, TOUCH commands have not promises on write
-            case (error: NSQErrorFinFailed, (_: FinCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorReqFailed, (_: ReqCommand, promise)) ⇒ promise.failure(error)
-            case (error: NSQErrorTouchFailed, (_: TouchCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorFinFailed, (_: FinCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorReqFailed, (_: ReqCommand, promise)) ⇒ promise.failure(error)
+            case (_: NSQErrorTouchFailed, (_: TouchCommand, promise)) ⇒ promise.failure(error)
 
             // should close channel on fatal errors and failure current promise
-            case (error: NSQError, (_, promise)) ⇒
+            case (_: NSQError, (_, promise)) ⇒
               promise.failure(error)
               exceptionCaught(ctx, error)
 
             // should close channel on fatal errors
-            case (error: NSQError, _) ⇒
+            case _ ⇒
               exceptionCaught(ctx, error)
           }
 
