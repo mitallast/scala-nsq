@@ -1,10 +1,10 @@
-package org.mitallast.nsq
+package com.github.mitallast.nsq.nsq
 
 import java.io.Closeable
 
 import com.typesafe.config.{Config, ConfigFactory}
 import io.netty.util.CharsetUtil
-import org.mitallast.nsq.protocol.OK
+import com.github.mitallast.nsq.nsq.protocol.OK
 
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration

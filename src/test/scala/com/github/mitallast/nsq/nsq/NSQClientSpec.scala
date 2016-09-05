@@ -1,8 +1,8 @@
-package org.mitallast.nsq
+package com.github.mitallast.nsq.nsq
 
 import java.util.concurrent.TimeUnit
 
-import org.mitallast.nsq.protocol.{NSQProtocol, OK}
+import com.github.mitallast.nsq.nsq.protocol.{NSQProtocol, OK}
 import org.scalatest.{FlatSpec, Matchers}
 
 import scala.concurrent.Await

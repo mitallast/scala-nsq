@@ -1,4 +1,4 @@
-package org.mitallast.nsq
+package com.github.mitallast.nsq.nsq
 
 import java.net.InetSocketAddress
 

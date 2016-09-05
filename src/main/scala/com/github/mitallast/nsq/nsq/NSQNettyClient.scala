@@ -1,4 +1,4 @@
-package org.mitallast.nsq
+package com.github.mitallast.nsq.nsq
 
 import java.net.SocketAddress
 import java.util.concurrent.{ConcurrentLinkedQueue, TimeUnit}
@@ -15,7 +15,7 @@ import io.netty.handler.codec.compression.{SnappyFramedDecoder, SnappyFramedEnco
 import io.netty.handler.ssl.SslContextBuilder
 import io.netty.util.concurrent.{DefaultThreadFactory, FutureListener, ScheduledFuture, Future ⇒ NettyFuture}
 import io.netty.util.{AttributeKey, CharsetUtil}
-import org.mitallast.nsq.protocol._
+import com.github.mitallast.nsq.nsq.protocol._
 import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConversions._
