@@ -14,6 +14,18 @@ libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.6" % "test"
 libraryDependencies += "org.scalacheck" %% "scalacheck" % "1.13.2" % "test"
 libraryDependencies += "org.json4s" %% "json4s-jackson" % "3.4.0"
 
+publishMavenStyle := true
+
+pomIncludeRepository := { _ => false }
+
+publishTo := {
+  val nexus = "https://oss.sonatype.org/"
+  if (isSnapshot.value)
+    Some("snapshots" at nexus + "content/repositories/snapshots")
+  else
+    Some("releases"  at nexus + "service/local/staging/deploy/maven2")
+}
+
 pomExtra in Global := {
   <url>https://github.com/mitallast/scala-nsq</url>
     <licenses>
