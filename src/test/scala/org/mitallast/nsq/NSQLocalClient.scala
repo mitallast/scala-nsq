@@ -59,14 +59,59 @@ object NSQLocalClient {
     val channel = bootstrap.bind(localAddr).sync().channel()
 
     def close() = {
-      channel.close().sync()
+      if(channel.isOpen){
+        channel.close().sync()
+      }
       bootstrap.group().shutdownGracefully(10, 10, TimeUnit.MILLISECONDS).sync()
     }
 
     def handle = request.poll(1, MINUTES)
 
+    def initialize() = skip().ok()
+
+    def skip() = {
+      handle
+      send()
+      this
+    }
+
+    def ok() = {
+      handle
+      send(responseBuf("OK"))
+      this
+    }
+
     def send(buf: ByteBuf) = response.offer(Some(buf))
 
     def send() = response.offer(None)
+  }
+
+  case class producer(fun: (LocalNSQNettyServer, LocalNSQNettyClient, NSQProducer) ⇒ Unit) {
+    val server = LocalNSQNettyServer()
+    val client = LocalNSQNettyClient()
+    val producer = client.producer()
+
+    try {
+      fun(server, client, producer)
+    } finally {
+      producer.close()
+      client.close()
+      server.close()
+    }
+  }
+
+  case class consumer(fun: (LocalNSQNettyServer, LocalNSQNettyClient, LinkedBlockingQueue[NSQMessage], NSQConsumer) ⇒ Unit) {
+    val server = LocalNSQNettyServer()
+    val client = LocalNSQNettyClient()
+    val queue = new LinkedBlockingQueue[NSQMessage](1)
+    val consumer = client.consumer(topic, consumer = queue.offer(_))
+
+    try {
+      fun(server, client, queue, consumer)
+    } finally {
+      consumer.close()
+      client.close()
+      server.close()
+    }
   }
 }

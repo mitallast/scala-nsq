@@ -1,6 +1,6 @@
 package org.mitallast.nsq
 
-import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
+import java.util.concurrent.TimeUnit
 
 import org.mitallast.nsq.protocol.{NSQProtocol, OK}
 import org.scalatest.{FlatSpec, Matchers}
@@ -14,31 +14,16 @@ class NSQClientSpec extends FlatSpec with Matchers {
   import NSQLocalClient._
   import NSQProtocol._
 
-  "nsq client producer" should "init connection" in {
-    val server = LocalNSQNettyServer()
-    val client = LocalNSQNettyClient()
-    val producer = client.producer()
-
+  "nsq client producer" should "init connection" in producer { (server, client, producer) ⇒
     server.handle shouldEqual buf("  V2")
     server.send()
 
     server.handle shouldEqual requestBuf("IDENTIFY\n", json)
     server.send(responseBuf("OK"))
-
-    producer.close()
-    client.close()
-    server.close()
   }
 
-  it should "send pub command" in {
-    val server = LocalNSQNettyServer()
-    val client = LocalNSQNettyClient()
-    val producer = client.producer()
-
-    server.handle
-    server.send()
-    server.handle
-    server.send(responseBuf("OK"))
+  it should "send pub command" in producer { (server, client, producer) ⇒
+    server.initialize()
 
     val future = producer.pubStr("test", "hello")
 
@@ -48,21 +33,10 @@ class NSQClientSpec extends FlatSpec with Matchers {
     Await.ready(future, 10.seconds)
     future.isCompleted shouldBe true
     future.value.get shouldEqual Success(OK())
-
-    producer.close()
-    client.close()
-    server.close()
   }
 
-  it should "send mpub command" in {
-    val server = LocalNSQNettyServer()
-    val client = LocalNSQNettyClient()
-    val producer = client.producer()
-
-    server.handle
-    server.send()
-    server.handle
-    server.send(responseBuf("OK"))
+  it should "send mpub command" in producer { (server, client, producer) ⇒
+    server.initialize()
 
     val future = producer.mpubStr("scala.nsq.test", Array("hello", "world"))
 
@@ -72,85 +46,40 @@ class NSQClientSpec extends FlatSpec with Matchers {
     Await.ready(future, 10.seconds)
     future.isCompleted shouldBe true
     future.value.get shouldEqual Success(OK())
-
-    producer.close()
-    client.close()
-    server.close()
   }
 
-  it should "handle E_INVALID error" in {
-    val server = LocalNSQNettyServer()
-    val client = LocalNSQNettyClient()
-    val producer = client.producer()
-
-    server.handle
-    server.send()
-    server.handle
-    server.send(responseBuf("OK"))
-
+  it should "handle E_INVALID error" in producer { (server, client, producer) ⇒
+    server.initialize()
     val future = producer.pubStr("test", "message")
-
     server.handle
     server.send(errorBuf(NSQError.E_INVALID))
-
     an[NSQErrorInvalid] should be thrownBy Await.result(future, 10.seconds)
-
-    producer.close()
-    client.close()
-    server.close()
   }
 
-  it should "cancel futures on close server channel" in {
-    val server = LocalNSQNettyServer()
-    val client = LocalNSQNettyClient()
-    val producer = client.producer()
-
-    server.handle
-    server.send()
-    server.handle
-    server.send(responseBuf("OK"))
-
+  it should "cancel futures on close server channel" in producer { (server, client, producer) ⇒
+    server.initialize()
     val future = producer.pubStr("test", "message")
-
-    server.handle
-    server.send()
-    server.close()
-
+    server.skip().close()
     an[NSQDisconnected] should be thrownBy Await.result(future, 10.seconds)
-
-    producer.close()
-    client.close()
   }
 
-  it should "cancel futures on close client channel" in {
-    val server = LocalNSQNettyServer()
-    val client = LocalNSQNettyClient()
-    val producer = client.producer()
-
-    server.handle
-    server.send()
-    server.handle
-    server.send(responseBuf("OK"))
-
+  it should "cancel futures on close client channel" in producer { (server, client, producer) ⇒
+    server.initialize()
     val future = producer.pubStr("test", "message")
-
-    server.handle
-    server.send()
-
+    server.skip()
     producer.close()
-
     an[NSQDisconnected] should be thrownBy Await.result(future, 10.seconds)
-
-    client.close()
-    server.close()
   }
 
-  "nsq consumer" should "init connection" in {
-    val server = LocalNSQNettyServer()
-    val client = LocalNSQNettyClient()
-    val consumer = client.consumer("scala.nsq.test", consumer = message ⇒ {
-    })
+  it should "cancel future on non matched error type" in producer { (server, client, producer) ⇒
+    server.initialize()
+    val future = producer.pubStr("test", "message")
+    server.handle
+    server.send(errorBuf(NSQError.E_FIN_FAILED))
+    an[NSQErrorFinFailed] should be thrownBy Await.result(future, 10.seconds)
+  }
 
+  "nsq consumer" should "init connection" in consumer { (server, client, queue, consumer) ⇒
     server.handle shouldEqual buf("  V2")
     server.send()
 
@@ -159,25 +88,10 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
     server.handle shouldEqual buf("SUB scala.nsq.test default\n")
     server.send()
-
-    consumer.close()
-    client.close()
-    server.close()
   }
 
-  it should "send rdy command" in {
-    val server = LocalNSQNettyServer()
-    val client = LocalNSQNettyClient()
-
-    val queue = new LinkedBlockingQueue[NSQMessage](1)
-    val consumer = client.consumer("scala.nsq.test", consumer = queue.offer(_))
-
-    server.handle
-    server.send()
-    server.handle
-    server.send(responseBuf("OK"))
-    server.handle
-    server.send()
+  it should "send rdy command" in consumer { (server, client, queue, consumer) ⇒
+    server.initialize().skip()
 
     consumer.ready(1)
 
@@ -186,26 +100,12 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
     val message = queue.poll(10, TimeUnit.SECONDS)
     message should not be null
-    new String(message.data) shouldEqual "hello"
 
-    consumer.close()
-    client.close()
-    server.close()
+    new String(message.data) shouldEqual "hello"
   }
 
-  it should "send fin command" in {
-    val server = LocalNSQNettyServer()
-    val client = LocalNSQNettyClient()
-
-    val queue = new LinkedBlockingQueue[NSQMessage](1)
-    val consumer = client.consumer("scala.nsq.test", consumer = queue.offer(_))
-
-    server.handle
-    server.send()
-    server.handle
-    server.send(responseBuf("OK"))
-    server.handle
-    server.send()
+  it should "send fin command" in consumer { (server, client, queue, consumer) ⇒
+    server.initialize().skip()
 
     consumer.ready(1)
 
@@ -216,25 +116,10 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
     server.handle shouldEqual buf(s"FIN $messageId\n")
     server.send()
-
-    consumer.close()
-    client.close()
-    server.close()
   }
 
-  it should "send req command" in {
-    val server = LocalNSQNettyServer()
-    val client = LocalNSQNettyClient()
-
-    val queue = new LinkedBlockingQueue[NSQMessage](1)
-    val consumer = client.consumer("scala.nsq.test", consumer = queue.offer(_))
-
-    server.handle
-    server.send()
-    server.handle
-    server.send(responseBuf("OK"))
-    server.handle
-    server.send()
+  it should "send req command" in consumer { (server, client, queue, consumer) ⇒
+    server.initialize().skip()
 
     consumer.ready(1)
 
@@ -245,25 +130,10 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
     server.handle shouldEqual buf(s"REQ $messageId 100\n")
     server.send()
-
-    consumer.close()
-    client.close()
-    server.close()
   }
 
-  it should "send touch command" in {
-    val server = LocalNSQNettyServer()
-    val client = LocalNSQNettyClient()
-
-    val queue = new LinkedBlockingQueue[NSQMessage](1)
-    val consumer = client.consumer("scala.nsq.test", consumer = queue.offer(_))
-
-    server.handle
-    server.send()
-    server.handle
-    server.send(responseBuf("OK"))
-    server.handle
-    server.send()
+  it should "send touch command" in consumer { (server, client, queue, consumer) ⇒
+    server.initialize().skip()
 
     consumer.ready(1)
 
@@ -274,25 +144,10 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
     server.handle shouldEqual buf(s"TOUCH $messageId\n")
     server.send()
-
-    consumer.close()
-    client.close()
-    server.close()
   }
 
-  it should "schedule send touch command" in {
-    val server = LocalNSQNettyServer()
-    val client = LocalNSQNettyClient()
-
-    val queue = new LinkedBlockingQueue[NSQMessage](1)
-    val consumer = client.consumer("scala.nsq.test", consumer = queue.offer(_))
-
-    server.handle
-    server.send()
-    server.handle
-    server.send(responseBuf("OK"))
-    server.handle
-    server.send()
+  it should "schedule send touch command" in consumer { (server, client, queue, consumer) ⇒
+    server.initialize().skip()
 
     consumer.ready(1)
 
@@ -313,11 +168,6 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
     message.fin()
 
-    server.handle
-    server.send()
-
-    consumer.close()
-    client.close()
-    server.close()
+    server.skip()
   }
 }

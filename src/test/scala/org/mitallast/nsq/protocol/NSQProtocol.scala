@@ -15,6 +15,7 @@ object NSQProtocol {
   val timestamp = System.currentTimeMillis()
   val attempts = 2
   val messageId = "WCKHEOWCMPWECHWQ"
+  val topic = "scala.nsq.test"
 
   def buf(buffers: ByteBuf*) = Unpooled.wrappedBuffer(buffers: _*)
 
