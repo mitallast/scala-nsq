@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConversions._
 import scala.concurrent.{CancellationException, Future, Promise}
+import scala.concurrent.duration._
 import scala.util.Random
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
@@ -193,9 +194,43 @@ class NSQNettyClient(val config: Config) extends NSQClient {
   private[nsq] val wbLow: Int = config.getInt("scala-nsq.wb-low")
   private[nsq] val wbHigh: Int = config.getInt("scala-nsq.wb-high")
   private[nsq] val maxConnections: Int = config.getInt("scala-nsq.max-connections")
+  private[nsq] val lookupPeriod = config.getDuration("scala-nsq.lookup-period", MILLISECONDS)
   private[nsq] val lookupAddressList: List[String] = config.getStringList("scala-nsq.lookup-address").toList
 
-  private[nsq] val nsqConfig = NSQConfig.default
+  private[nsq] val nsqConfig = {
+    var conf = NSQConfig.default
+    if (config.hasPath("scala-nsq.identify.feature-negotiation")){
+      conf = conf.copy(featureNegotiation = config.getBoolean("scala-nsq.identify.feature-negotiation"))
+    }
+    if (config.hasPath("scala-nsq.identify.heartbeat-interval")) {
+      conf = conf.copy(heartbeatInterval = Some(config.getInt("scala-nsq.identify.heartbeat-interval")))
+    }
+    if (config.hasPath("scala-nsq.identify.output-buffer-size")) {
+      conf = conf.copy(outputBufferSize = Some(config.getInt("scala-nsq.identify.output-buffer-size")))
+    }
+    if (config.hasPath("scala-nsq.identify.output-buffer-timeout")) {
+      conf = conf.copy(outputBufferTimeout = Some(config.getInt("scala-nsq.identify.output-buffer-timeout")))
+    }
+    if (config.hasPath("scala-nsq.identify.tls-v1")) {
+      conf = conf.copy(tlsV1 = Some(config.getBoolean("scala-nsq.identify.tls-v1")))
+    }
+    if (config.hasPath("scala-nsq.identify.snappy")) {
+      conf = conf.copy(snappy = Some(config.getBoolean("scala-nsq.identify.snappy")))
+    }
+    if (config.hasPath("scala-nsq.identify.deflate")) {
+      conf = conf.copy(deflate = Some(config.getBoolean("scala-nsq.identify.deflate")))
+    }
+    if (config.hasPath("scala-nsq.identify.deflate-level")) {
+      conf = conf.copy(deflateLevel = Some(config.getInt("scala-nsq.identify.deflate-level")))
+    }
+    if (config.hasPath("scala-nsq.identify.sample-rate")) {
+      conf = conf.copy(sampleRate = Some(config.getInt("scala-nsq.identify.sample-rate")))
+    }
+    if (config.hasPath("scala-nsq.identify.msg-timeout")) {
+      conf = conf.copy(msgTimeout = Some(config.getInt("scala-nsq.identify.msg-timeout")))
+    }
+    conf
+  }
 
   private[nsq] val lookup = new NSQLookup(lookupAddressList)
 
@@ -360,21 +395,11 @@ class NSQNettyClient(val config: Config) extends NSQClient {
     promise.future
   }
 
-  def producer(): NSQProducer = {
-    val nsqProducer = new NSQNettyProducer()
-    lookup.nodes() foreach { address ⇒
-      nsqProducer.connect(address)
-    }
-    nsqProducer
-  }
+  def producer(): NSQProducer =
+    new NSQNettyProducer()
 
-  def consumer(topic: String, channel: String = "default", consumer: NSQMessage ⇒ Unit): NSQConsumer = {
-    val nsqConsumer = new NSQNettyConsumer(topic, channel, consumer)
-    lookup.lookup(topic) foreach { address ⇒
-      nsqConsumer.connect(address)
-    }
-    nsqConsumer
-  }
+  def consumer(topic: String, channel: String = "default", consumer: NSQMessage ⇒ Unit): NSQConsumer =
+    new NSQNettyConsumer(topic, channel, consumer)
 
   private[nsq] case class NSQMessageImpl(
     timestamp: Long,
@@ -434,20 +459,28 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       }
     }
 
+    lookup.nodes().foreach(connect)
+
+    private[nsq] val lookupTask = bootstrap.group().scheduleWithFixedDelay(new Runnable {
+      override def run() = lookup.nodes().foreach(connect)
+    }, lookupPeriod, lookupPeriod, MILLISECONDS)
+
     private[nsq] def connect(address: SocketAddress): Unit = {
-      val pool = poolMap.get(address)
-      pool.acquire().addListener(new FutureListener[Channel] {
-        override def operationComplete(future: NettyFuture[Channel]) = {
-          if (future.isSuccess) {
-            val channel = future.getNow
-            try {
-              log.info("connected: {}", channel.remoteAddress())
-            } finally {
-              pool.release(channel)
+      if (!poolMap.contains(address)){
+        val pool = poolMap.get(address)
+        pool.acquire().addListener(new FutureListener[Channel] {
+          override def operationComplete(future: NettyFuture[Channel]) = {
+            if (future.isSuccess) {
+              val channel = future.getNow
+              try {
+                log.info("connected: {}", channel.remoteAddress())
+              } finally {
+                pool.release(channel)
+              }
             }
           }
-        }
-      }).awaitUninterruptibly()
+        }).awaitUninterruptibly()
+      }
     }
 
     private[nsq] def connection[T](consumer: Channel ⇒ Future[T]): Future[T] = {
@@ -474,6 +507,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
     }
 
     def close() = {
+      lookupTask.cancel(true)
       poolMap.close()
     }
 
@@ -520,26 +554,35 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       }
     }
 
+    lookup.lookup(topic).foreach(connect)
+
+    private[nsq] val lookupTask = bootstrap.group().scheduleWithFixedDelay(new Runnable {
+      override def run() = lookup.nodes().foreach(connect)
+    }, lookupPeriod, lookupPeriod, MILLISECONDS)
+
     private[nsq] def connect(address: SocketAddress): Unit = {
-      val pool = poolMap.get(address)
-      pool.acquire()
-        .addListener(new FutureListener[Channel] {
-          override def operationComplete(future: NettyFuture[Channel]) = {
-            if (future.isSuccess) {
-              val channel = future.getNow
-              log.info(s"successfully connected to {}", address)
-              pool.release(channel)
-            } else if (future.isCancelled) {
-              log.warn(s"error connect to {}, canceled", address)
-            } else {
-              log.error(s"error connect to $address", future.cause())
+      if(!poolMap.contains(address)){
+        val pool = poolMap.get(address)
+        pool.acquire()
+          .addListener(new FutureListener[Channel] {
+            override def operationComplete(future: NettyFuture[Channel]) = {
+              if (future.isSuccess) {
+                val channel = future.getNow
+                log.info(s"successfully connected to {}", address)
+                pool.release(channel)
+              } else if (future.isCancelled) {
+                log.warn(s"error connect to {}, canceled", address)
+              } else {
+                log.error(s"error connect to $address", future.cause())
+              }
             }
-          }
-        })
-        .awaitUninterruptibly()
+          })
+          .awaitUninterruptibly()
+      }
     }
 
     def close() = {
+      lookupTask.cancel(true)
       poolMap.close()
     }
 
