@@ -16,7 +16,9 @@ class NSQLookup(addresses: List[String]) {
         val url = new URL(address)
         val lookupUrl = new URL(url.getProtocol, url.getHost, url.getPort, "/lookup/?topic=" + topic)
 
-        log.info(s"lookup $url topic $topic")
+        if (log.isDebugEnabled){
+          log.debug(s"lookup $url topic $topic")
+        }
         val connection = lookupUrl.openConnection().asInstanceOf[HttpURLConnection]
         connection.setRequestMethod("GET")
         connection.connect()
@@ -26,7 +28,9 @@ class NSQLookup(addresses: List[String]) {
             try {
               val json = parse(StreamInput(stream)).camelizeKeys
               val response = json.extract[LookupResponse]
-              log.info("response: {}", response)
+              if (log.isDebugEnabled){
+                log.debug("response: {}", response)
+              }
 
               response.data.producers.map { producer ⇒
                 new InetSocketAddress(producer.hostname, producer.tcpPort)
@@ -53,7 +57,9 @@ class NSQLookup(addresses: List[String]) {
         val url = new URL(address)
         val lookupUrl = new URL(url.getProtocol, url.getHost, url.getPort, "/nodes")
 
-        log.info(s"lookup $url nodes")
+        if (log.isDebugEnabled) {
+          log.debug(s"lookup $url nodes")
+        }
         val connection = lookupUrl.openConnection().asInstanceOf[HttpURLConnection]
         connection.setRequestMethod("GET")
         connection.connect()
@@ -63,7 +69,9 @@ class NSQLookup(addresses: List[String]) {
             try {
               val json = parse(StreamInput(stream)).camelizeKeys
               val response = json.extract[LookupResponse]
-              log.info("response: {}", response)
+              if (log.isDebugEnabled) {
+                log.debug("response: {}", response)
+              }
               response.data.producers.map { producer ⇒
                 new InetSocketAddress(producer.hostname, producer.tcpPort)
               }

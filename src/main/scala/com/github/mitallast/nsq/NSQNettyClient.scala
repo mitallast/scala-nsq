@@ -48,7 +48,9 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
   private implicit val formats = DefaultFormats
 
   override def channelRead0(ctx: ChannelHandlerContext, msg: NSQFrame) {
-    log.info("frame: {}", msg)
+    if (log.isDebugEnabled) {
+      log.debug("frame: {}", msg)
+    }
     var reinstallDefaultDecoder = true
     msg match {
       case frame: NSQResponseFrame ⇒
@@ -77,7 +79,9 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
             parseIdentify(message)
 
             if (ssl) {
-              log.info("adding ssl to pipeline")
+              if (log.isDebugEnabled) {
+                log.debug("adding ssl to pipeline")
+              }
               val sslContext = SslContextBuilder.forClient().build()
               val sslHandler = sslContext.newHandler(ctx.channel().alloc())
               pipeline.addBefore(NSQ_DECODER, SSL_HANDLER, sslHandler)
@@ -115,11 +119,15 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
     pipeline.remove(this)
     if (reinstallDefaultDecoder) {
       if (pipeline.get(DEFLATE_DECODER) != null) {
-        log.info("remove deflate decoder")
+        if (log.isDebugEnabled) {
+          log.debug("remove deflate decoder")
+        }
         pipeline.remove(DEFLATE_DECODER)
       }
       if (pipeline.get(SNAPPY_DECODER) != null) {
-        log.info("remove snappy decoder")
+        if (log.isDebugEnabled) {
+          log.debug("remove snappy decoder")
+        }
         pipeline.remove(SNAPPY_DECODER)
       }
     }
@@ -127,7 +135,9 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
 
   private def installDeflateDecoder(pipeline: ChannelPipeline): Boolean = {
     finished = true
-    log.info("adding deflate to pipeline")
+    if (log.isDebugEnabled) {
+      log.debug("adding deflate to pipeline")
+    }
     val decoder = ZlibCodecFactory.newZlibDecoder(ZlibWrapper.NONE)
     pipeline.addBefore(NSQ_DECODER, DEFLATE_DECODER, decoder)
     false
@@ -135,7 +145,9 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
 
   private def installSnappyDecoder(pipeline: ChannelPipeline): Boolean = {
     finished = true
-    log.info("adding snappy to pipeline")
+    if (log.isDebugEnabled) {
+      log.debug("adding snappy to pipeline")
+    }
     val decoder = new SnappyFramedDecoder()
     pipeline.replace(NSQ_DECODER, SNAPPY_DECODER, decoder)
     false
@@ -263,7 +275,9 @@ class NSQNettyClient(val config: Config) extends NSQClient {
     override def isSharable = true
 
     override def channelActive(ctx: ChannelHandlerContext): Unit = {
-      log.info("channel active {}", ctx)
+      if (log.isDebugEnabled) {
+        log.debug("channel active {}", ctx)
+      }
       super.channelActive(ctx)
       val responses = new ConcurrentLinkedQueue[(NSQCommand, Promise[NSQFrame])]()
       ctx.channel().attr(NSQConfig.attr).set(NSQConfig.default)
@@ -273,7 +287,9 @@ class NSQNettyClient(val config: Config) extends NSQClient {
     }
 
     override def channelInactive(ctx: ChannelHandlerContext) = {
-      log.info("channel inactive {}", ctx)
+      if (log.isDebugEnabled) {
+        log.debug("channel inactive {}", ctx)
+      }
       super.channelInactive(ctx)
       ctx.channel().close()
       val responses = ctx.channel().attr(NSQNettyClient.responsesAttr).get()
@@ -302,7 +318,9 @@ class NSQNettyClient(val config: Config) extends NSQClient {
     }
 
     override def channelRead0(ctx: ChannelHandlerContext, frame: NSQFrame) = {
-      log.info("frame: {}", frame)
+      if (log.isDebugEnabled) {
+        log.debug("frame: {}", frame)
+      }
       frame match {
         case Heartbeat ⇒
           ctx.writeAndFlush(NopCommand)
@@ -368,16 +386,22 @@ class NSQNettyClient(val config: Config) extends NSQClient {
   }
 
   def close() = {
-    log.info("shutdown")
+    if (log.isDebugEnabled) {
+      log.debug("shutdown")
+    }
     bootstrap.group.shutdownGracefully.awaitUninterruptibly()
-    log.info("closed")
+    if (log.isDebugEnabled) {
+      log.debug("closed")
+    }
   }
 
   private[nsq] def command(channel: Channel, cmd: NSQCommand): Future[NSQFrame] = {
     val promise = Promise[NSQFrame]()
     channel.eventLoop().execute(new Runnable {
       override def run() = {
-        log.info("command: {}", cmd)
+        if (log.isDebugEnabled) {
+          log.debug("command: {}", cmd)
+        }
         val responses = channel.attr(NSQNettyClient.responsesAttr).get()
         responses.add((cmd, promise))
         channel.writeAndFlush(cmd).addListener(new ChannelFutureListener {
@@ -448,7 +472,9 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       override def newPool(key: SocketAddress): FixedChannelPool = {
         new FixedChannelPool(bootstrap.remoteAddress(key), new AbstractChannelPoolHandler {
           override def channelCreated(ch: Channel): Unit = {
-            log.info("channel created: {}", key)
+            if (log.isDebugEnabled) {
+              log.debug("channel created: {}", key)
+            }
             val pipeline = ch.pipeline
             pipeline.addLast("nsq-decoder", new NSQDecoder())
             pipeline.addLast("nsq-encoder", new NSQEncoder())
@@ -473,7 +499,9 @@ class NSQNettyClient(val config: Config) extends NSQClient {
             if (future.isSuccess) {
               val channel = future.getNow
               try {
-                log.info("connected: {}", channel.remoteAddress())
+                if (log.isDebugEnabled) {
+                  log.debug("connected: {}", channel.remoteAddress())
+                }
               } finally {
                 pool.release(channel)
               }
@@ -543,7 +571,9 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       override def newPool(key: SocketAddress) = {
         new FixedChannelPool(bootstrap.remoteAddress(key), new AbstractChannelPoolHandler {
           override def channelCreated(ch: Channel): Unit = {
-            log.info("channel created: {}", key)
+            if (log.isDebugEnabled) {
+              log.debug("channel created: {}", key)
+            }
             val pipeline = ch.pipeline
             pipeline.addLast("nsq-decoder", new NSQDecoder())
             pipeline.addLast("nsq-encoder", new NSQEncoder())
@@ -568,7 +598,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
             override def operationComplete(future: NettyFuture[Channel]) = {
               if (future.isSuccess) {
                 val channel = future.getNow
-                log.info(s"successfully connected to {}", address)
+                log.debug(s"successfully connected to {}", address)
                 pool.release(channel)
               } else if (future.isCancelled) {
                 log.warn(s"error connect to {}, canceled", address)
@@ -594,8 +624,10 @@ class NSQNettyClient(val config: Config) extends NSQClient {
           if (future.isSuccess) {
             val channel = future.getNow
             try {
-              log.info("channel {} active={}", channel, channel.isActive)
-              log.info("send rdy({}) to {}", count, channel.remoteAddress())
+              if (log.isDebugEnabled) {
+                log.debug("channel {} active={}", channel, channel.isActive)
+                log.debug("send rdy({}) to {}", count, channel.remoteAddress())
+              }
               channel.writeAndFlush(RdyCommand(count))
             } finally {
               pool.release(channel)
@@ -610,7 +642,9 @@ class NSQNettyClient(val config: Config) extends NSQClient {
     }
 
     def readyAll(count: Int): Unit = {
-      log.info("send rdy({}) to all", count)
+      if (log.isDebugEnabled) {
+        log.debug("send rdy({}) to all", count)
+      }
       val iterator = poolMap.iterator()
       while (iterator.hasNext) {
         val entry = iterator.next()
@@ -620,7 +654,9 @@ class NSQNettyClient(val config: Config) extends NSQClient {
             if (future.isSuccess) {
               val channel = future.getNow
               try {
-                log.info("send rdy({}) to {}", count, channel.remoteAddress())
+                if (log.isDebugEnabled) {
+                  log.debug("send rdy({}) to {}", count, channel.remoteAddress())
+                }
                 channel.writeAndFlush(RdyCommand(count))
               } finally {
                 pool.release(channel)
