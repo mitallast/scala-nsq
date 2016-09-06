@@ -2,6 +2,27 @@
 
 Scala NSQ client, based on netty, typesafe config, slf4j and json4s.
 
+## Dependency management
+
+Client requires scala 2.11, currently no version for 2.10.
+
+For SBT users:
+
+```scala
+libraryDependencies += "com.github.mitallast" %% "scala-nsq" % "1.0"
+```
+
+For Maven users:
+
+```scala
+<dependency>
+  <groupId>com.github.mitallast</groupId>
+  <artifactId>scala-nsq_2.11</artifactId>
+  <version>1.0</version>
+</dependency>
+```
+
+
 ## Configuration
 
 Configuration based on [typesafe config](https://github.com/typesafehub/config) library.
