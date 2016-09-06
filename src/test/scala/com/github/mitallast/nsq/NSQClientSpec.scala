@@ -3,6 +3,7 @@ package com.github.mitallast.nsq
 import java.util.concurrent.TimeUnit
 
 import com.github.mitallast.nsq.protocol.{NSQProtocol, OK}
+import com.typesafe.config.ConfigFactory
 import org.scalatest.{FlatSpec, Matchers}
 
 import scala.concurrent.Await
@@ -13,6 +14,11 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
   import NSQLocalClient._
   import NSQProtocol._
+
+  "nsq client" should "fallback to reference conf" in {
+    val client = NSQClient(ConfigFactory.parseString("{}"))
+    client.close()
+  }
 
   "nsq client producer" should "init connection" in producer { (server, client, producer) ⇒
     server.handle shouldEqual buf("  V2")

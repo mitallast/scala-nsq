@@ -37,9 +37,9 @@ trait NSQClient extends Closeable {
 
 object NSQClient {
 
-  def apply(): NSQClient = new NSQNettyClient(ConfigFactory.load("scala-nsq"))
+  def apply(): NSQClient = new NSQNettyClient(ConfigFactory.load())
 
-  def apply(config: Config): NSQClient = new NSQNettyClient(config)
+  def apply(config: Config): NSQClient = new NSQNettyClient(config.withFallback(ConfigFactory.defaultReference()))
 }
 
 
