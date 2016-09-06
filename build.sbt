@@ -26,6 +26,10 @@ publishTo := {
     Some("releases"  at nexus + "service/local/staging/deploy/maven2")
 }
 
+publishArtifact in Test := false
+
+sonatypeProfileName := "com.github.mitallast"
+
 pomExtra in Global := {
   <url>https://github.com/mitallast/scala-nsq</url>
     <licenses>
