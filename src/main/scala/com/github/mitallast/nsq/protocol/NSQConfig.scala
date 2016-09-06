@@ -1,4 +1,4 @@
-package com.github.mitallast.nsq.nsq.protocol
+package com.github.mitallast.nsq.protocol
 
 import java.net.InetAddress
 

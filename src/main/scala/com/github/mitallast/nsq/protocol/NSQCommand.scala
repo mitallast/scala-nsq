@@ -1,4 +1,4 @@
-package com.github.mitallast.nsq.nsq.protocol
+package com.github.mitallast.nsq.protocol
 
 private [nsq] sealed trait NSQCommand
 

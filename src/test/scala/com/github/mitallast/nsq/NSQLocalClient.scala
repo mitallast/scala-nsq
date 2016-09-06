@@ -1,4 +1,4 @@
-package com.github.mitallast.nsq.nsq
+package com.github.mitallast.nsq
 
 import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 
@@ -6,8 +6,8 @@ import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.ByteBuf
 import io.netty.channel.{ChannelHandlerContext, ChannelInitializer, SimpleChannelInboundHandler}
 import io.netty.channel.local.{LocalChannel, LocalEventLoopGroup, LocalServerChannel}
-import com.github.mitallast.nsq.nsq.protocol.NSQConfig
-import com.github.mitallast.nsq.nsq.protocol.NSQProtocol
+import com.github.mitallast.nsq.protocol.NSQConfig
+import com.github.mitallast.nsq.protocol.NSQProtocol
 
 import scala.concurrent.duration._
 

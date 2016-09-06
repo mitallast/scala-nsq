@@ -1,10 +1,10 @@
-package com.github.mitallast.nsq.nsq.protocol
+package com.github.mitallast.nsq.protocol
 
 import java.util
 
 import io.netty.buffer.Unpooled
 import io.netty.util.CharsetUtil
-import com.github.mitallast.nsq.nsq.NSQError
+import com.github.mitallast.nsq.NSQError
 
 private [nsq] sealed trait NSQFrame
 private [nsq] sealed trait NSQResponseFrame extends NSQFrame

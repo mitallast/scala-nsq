@@ -1,4 +1,4 @@
-package com.github.mitallast.nsq.nsq
+package com.github.mitallast.nsq
 
 import java.net.{HttpURLConnection, InetSocketAddress, SocketAddress, URL}
 

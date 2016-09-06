@@ -1,4 +1,4 @@
-package com.github.mitallast.nsq.nsq.protocol
+package com.github.mitallast.nsq.protocol
 
 import com.typesafe.config.ConfigFactory
 import io.netty.buffer.{ByteBuf, Unpooled}

@@ -1,4 +1,4 @@
-package com.github.mitallast.nsq.nsq
+package com.github.mitallast.nsq
 
 object NSQError {
   val E_INVALID = "E_INVALID"

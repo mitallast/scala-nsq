@@ -1,7 +1,7 @@
-package com.github.mitallast.nsq.nsq.protocol
+package com.github.mitallast.nsq.protocol
 
 import io.netty.channel.embedded.EmbeddedChannel
-import com.github.mitallast.nsq.nsq._
+import com.github.mitallast.nsq._
 import org.scalatest.{FlatSpec, Matchers}
 
 class NSQDecoderSpec extends FlatSpec with Matchers {

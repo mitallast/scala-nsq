@@ -1,4 +1,4 @@
-package com.github.mitallast.nsq.nsq.protocol
+package com.github.mitallast.nsq.protocol
 
 import java.util
 
@@ -6,7 +6,7 @@ import io.netty.buffer.ByteBuf
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.ReplayingDecoder
 import io.netty.util.CharsetUtil
-import com.github.mitallast.nsq.nsq._
+import com.github.mitallast.nsq._
 import org.slf4j.LoggerFactory
 
 
