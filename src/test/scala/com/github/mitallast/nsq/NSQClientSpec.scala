@@ -57,7 +57,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
   it should "handle E_INVALID error" in producer { (server, client, producer) ⇒
     server.initialize()
     val future = producer.pubStr("test", "message")
-    server.handle
+    server.handle()
     server.send(errorBuf(NSQError.E_INVALID))
     an[NSQErrorInvalid] should be thrownBy Await.result(future, 10.seconds)
   }
@@ -80,12 +80,12 @@ class NSQClientSpec extends FlatSpec with Matchers {
   it should "cancel future on non matched error type" in producer { (server, client, producer) ⇒
     server.initialize()
     val future = producer.pubStr("test", "message")
-    server.handle
+    server.handle()
     server.send(errorBuf(NSQError.E_FIN_FAILED))
     an[NSQErrorFinFailed] should be thrownBy Await.result(future, 10.seconds)
   }
 
-  "nsq consumer" should "init connection" in consumer { (server, client, queue, consumer) ⇒
+  "nsq client consumer" should "init connection" in consumer { (server, client, queue, consumer) ⇒
     server.handle shouldEqual buf("  V2")
     server.send()
 
@@ -93,13 +93,14 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.send(responseBuf("OK"))
 
     server.handle shouldEqual buf("SUB scala.nsq.test default\n")
+    server.send(responseBuf("OK"))
+
+    server.handle shouldEqual buf("RDY 1\n")
     server.send()
   }
 
   it should "send rdy command" in consumer { (server, client, queue, consumer) ⇒
-    server.initialize().skip()
-
-    consumer.ready(1)
+    server.initialize().ok()
 
     server.handle shouldEqual buf("RDY 1\n")
     server.send(messageBuf("hello"))
@@ -111,25 +112,21 @@ class NSQClientSpec extends FlatSpec with Matchers {
   }
 
   it should "send fin command" in consumer { (server, client, queue, consumer) ⇒
-    server.initialize().skip()
+    server.initialize().ok()
 
-    consumer.ready(1)
-
-    server.handle
+    server.handle()
     server.send(messageBuf("hello"))
 
     queue.poll(10, TimeUnit.SECONDS).fin()
 
-    server.handle shouldEqual buf(s"FIN $messageId\n")
+    server.handle() shouldEqual buf(s"FIN $messageId\n")
     server.send()
   }
 
   it should "send req command" in consumer { (server, client, queue, consumer) ⇒
-    server.initialize().skip()
+    server.initialize().ok()
 
-    consumer.ready(1)
-
-    server.handle
+    server.handle()
     server.send(messageBuf("hello"))
 
     queue.poll(10, TimeUnit.SECONDS).req(100)
@@ -139,11 +136,9 @@ class NSQClientSpec extends FlatSpec with Matchers {
   }
 
   it should "send touch command" in consumer { (server, client, queue, consumer) ⇒
-    server.initialize().skip()
+    server.initialize().ok()
 
-    consumer.ready(1)
-
-    server.handle
+    server.handle()
     server.send(messageBuf("hello"))
 
     queue.poll(10, TimeUnit.SECONDS).touch()
@@ -153,11 +148,9 @@ class NSQClientSpec extends FlatSpec with Matchers {
   }
 
   it should "schedule send touch command" in consumer { (server, client, queue, consumer) ⇒
-    server.initialize().skip()
+    server.initialize().ok()
 
-    consumer.ready(1)
-
-    server.handle
+    server.handle()
     server.send(messageBuf("hello"))
 
     val message = queue.poll(10, TimeUnit.SECONDS)

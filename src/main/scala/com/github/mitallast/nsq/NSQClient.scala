@@ -32,16 +32,19 @@ trait NSQClient extends Closeable {
 
   def producer(): NSQProducer
 
-  def consumer(topic: String, channel: String = "default", consumer: NSQMessage ⇒ Unit): NSQConsumer
+  def consumer(topic: String, channel: String = "default")(consumer: NSQMessage ⇒ Unit): NSQConsumer
 }
 
 object NSQClient {
 
-  def apply(): NSQClient = new NSQNettyClient(ConfigFactory.load())
+  def apply(): NSQClient = apply(ConfigFactory.load())
 
-  def apply(config: Config): NSQClient = new NSQNettyClient(config.withFallback(ConfigFactory.defaultReference()))
+  def apply(config: Config): NSQClient = apply(NSQLookup(config), config)
+
+  def apply(lookup: NSQLookup): NSQClient = apply(lookup, ConfigFactory.load())
+
+  def apply(lookup: NSQLookup, config: Config): NSQClient = new NSQNettyClient(lookup, config.withFallback(ConfigFactory.defaultReference()))
 }
-
 
 trait NSQProducer extends Closeable {
 
@@ -59,8 +62,4 @@ trait NSQProducer extends Closeable {
 }
 
 trait NSQConsumer extends Closeable {
-
-  def ready(count: Int): Unit
-
-  def readyAll(count: Int): Unit
 }

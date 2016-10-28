@@ -4,12 +4,12 @@ Scala NSQ client, based on netty, typesafe config, slf4j and json4s.
 
 ## Dependency management
 
-Client requires scala 2.11, currently no version for 2.10.
+Client requires scala 2.11.
 
 For SBT users:
 
 ```scala
-libraryDependencies += "com.github.mitallast" %% "scala-nsq" % "1.0"
+libraryDependencies += "com.github.mitallast" %% "scala-nsq" % "1.3-SNAPSHOT"
 ```
 
 For Maven users:
@@ -18,7 +18,7 @@ For Maven users:
 <dependency>
   <groupId>com.github.mitallast</groupId>
   <artifactId>scala-nsq_2.11</artifactId>
-  <version>1.0</version>
+  <version>1.3-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -47,7 +47,6 @@ val client = NSQClient()
 ```
 
 
-
 Also, you can provide it programmatically:
 
 ```scala
@@ -57,6 +56,29 @@ import com.typesafe.config.Config
 val config: Config = ...
 val client = NSQClient(config)
 ```
+
+By default, client use `NSQLookupDefault` with configurable addresses
+to `nsqlookupd` instances. By default, `http://127.0.0.1:4161` address using.
+Set config property `nsq.lookup-address` and `lookup-period` to override.
+
+Also, you can implement trait `NSQLookup` and provide it programmatically:
+
+```scala
+import org.mitallast.nsq._
+import java.net.InetSocketAddress
+
+val lookup = new NSQLookup {
+    def nodes(): List[SocketAddress] = ...
+    def lookup(topic: String): List[SocketAddress] = ...
+}
+
+val client = NSQClient(lookup)
+
+// or with config:
+val config: Config = ...
+val client = NSQClient(lookup, config)
+```
+
 
 ## Producer API
 
@@ -80,8 +102,12 @@ producer.mpubStr(topic="test", data=Seq("hello", "world")).onComplete(listener)
 
 ## Consumer API
 
+Consumer automatically send `RDY <number>\n` command. By default, 1 message.
+Set config property `nsq.max-ready-count` to override. 
+
+
 ```scala
-val consumer = client.consumer(topic="test", channel="default", consumer= message => {
+val consumer = client.consumer(topic="test", channel="default") { message =>
     log.info("received: {}", msg)
     // send `TOUCH msgid` message request 
     msg.touch() 
@@ -89,11 +115,5 @@ val consumer = client.consumer(topic="test", channel="default", consumer= messag
     msg.req(100)
     // send `FIN msgid` message request
     msg.fin()
-})
-
-// send "RDY 1" to random node
-consumer.ready(1) 
-
-// send "RDY 1" to all nodes
-consumer.readyAll(1)
+}
 ```

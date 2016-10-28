@@ -2,11 +2,32 @@ package com.github.mitallast.nsq
 
 import java.net.{HttpURLConnection, InetSocketAddress, SocketAddress, URL}
 
-import org.json4s._
+import com.typesafe.config.{Config, ConfigFactory}
+import org.json4s.{DefaultFormats, StreamInput}
 import org.json4s.jackson.JsonMethods._
 import org.slf4j.LoggerFactory
 
-class NSQLookup(addresses: List[String]) {
+import scala.collection.JavaConversions._
+
+trait NSQLookup {
+
+  def lookup(topic: String): List[SocketAddress]
+
+  def nodes(): List[SocketAddress]
+}
+
+object NSQLookup {
+
+  def apply(): NSQLookup = apply(ConfigFactory.load())
+
+  def apply(config: Config): NSQLookup = apply(config.withFallback(ConfigFactory.defaultReference()).getStringList("nsq.lookup-address").toList)
+
+  def apply(address: String): NSQLookup = apply(List(address))
+
+  def apply(addresses: List[String]): NSQLookup = new NSQLookupDefault(addresses)
+}
+
+class NSQLookupDefault(addresses: List[String]) extends NSQLookup {
   private val log = LoggerFactory.getLogger(getClass)
   private implicit val formats = DefaultFormats
 
@@ -16,7 +37,7 @@ class NSQLookup(addresses: List[String]) {
         val url = new URL(address)
         val lookupUrl = new URL(url.getProtocol, url.getHost, url.getPort, "/lookup/?topic=" + topic)
 
-        if (log.isDebugEnabled){
+        if (log.isDebugEnabled) {
           log.debug(s"lookup $url topic $topic")
         }
         val connection = lookupUrl.openConnection().asInstanceOf[HttpURLConnection]
@@ -28,7 +49,7 @@ class NSQLookup(addresses: List[String]) {
             try {
               val json = parse(StreamInput(stream)).camelizeKeys
               val response = json.extract[LookupResponse]
-              if (log.isDebugEnabled){
+              if (log.isDebugEnabled) {
                 log.debug("response: {}", response)
               }
 

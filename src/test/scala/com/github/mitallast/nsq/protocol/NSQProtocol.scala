@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory
 object NSQProtocol {
 
   val log = LoggerFactory.getLogger(getClass)
-  val config = ConfigFactory.load("scala-nsq")
+  val config = ConfigFactory.load("nsq")
   val localAddr = new LocalAddress("nsq.id")
   val json ="""{"client_id":"test","hostname":"localhost","feature_negotiation":true,"user_agent":"test"}"""
   val timestamp = System.currentTimeMillis()
@@ -50,6 +50,4 @@ object NSQProtocol {
     .writeShort(attempts)
     .writeBytes(messageId.getBytes(CharsetUtil.US_ASCII))
     .writeBytes(data)
-
-
 }

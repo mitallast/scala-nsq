@@ -49,19 +49,42 @@ private[nsq] class NSQDecoder extends ReplayingDecoder[STATE](HEADER) {
             }
           case 1 ⇒
             //subtract 4 because the frame id is included
-            val error = in.readSlice(size - 4).toString(CharsetUtil.US_ASCII) match {
-              case NSQError.E_INVALID ⇒ new NSQErrorInvalid()
-              case NSQError.E_BAD_BODY ⇒ new NSQErrorBadBody()
-              case NSQError.E_BAD_TOPIC ⇒ new NSQErrorBadTopic()
-              case NSQError.E_BAD_CHANNEL ⇒ new NSQErrorBadChannel()
-              case NSQError.E_PUB_FAILED ⇒ new NSQErrorPubFailed()
-              case NSQError.E_MPUB_FAILED ⇒ new NSQErrorMpubFailed()
-              case NSQError.E_FIN_FAILED ⇒ new NSQErrorFinFailed()
-              case NSQError.E_REQ_FAILED ⇒ new NSQErrorReqFailed()
-              case NSQError.E_TOUCH_FAILED ⇒ new NSQErrorTouchFailed()
-              case NSQError.E_AUTH_FAILED ⇒ new NSQErrorAuthFailed()
-              case NSQError.E_UNAUTHORIZED ⇒ new NSQErrorUnauthorized()
-              case msg ⇒ new NSQProtocolError(msg)
+            val msg = in.readSlice(size - 4).toString(CharsetUtil.US_ASCII)
+            val error = if (msg.startsWith(NSQError.E_INVALID)) {
+              NSQErrorInvalid(msg)
+            }
+            else if (msg.startsWith(NSQError.E_BAD_BODY)) {
+              NSQErrorBadBody(msg)
+            }
+            else if (msg.startsWith(NSQError.E_BAD_TOPIC)) {
+              NSQErrorBadTopic(msg)
+            }
+            else if (msg.startsWith(NSQError.E_BAD_CHANNEL)) {
+              NSQErrorBadChannel(msg)
+            }
+            else if (msg.startsWith(NSQError.E_PUB_FAILED)) {
+              NSQErrorPubFailed(msg)
+            }
+            else if (msg.startsWith(NSQError.E_MPUB_FAILED)) {
+              NSQErrorMpubFailed(msg)
+            }
+            else if (msg.startsWith(NSQError.E_FIN_FAILED)) {
+              NSQErrorFinFailed(msg)
+            }
+            else if (msg.startsWith(NSQError.E_REQ_FAILED)) {
+              NSQErrorReqFailed(msg)
+            }
+            else if (msg.startsWith(NSQError.E_TOUCH_FAILED)) {
+              NSQErrorTouchFailed(msg)
+            }
+            else if (msg.startsWith(NSQError.E_AUTH_FAILED)) {
+              NSQErrorAuthFailed(msg)
+            }
+            else if (msg.startsWith(NSQError.E_UNAUTHORIZED)) {
+              NSQErrorUnauthorized(msg)
+            }
+            else {
+              NSQProtocolError(msg)
             }
             ErrorFrame(error)
           case 2 ⇒
@@ -73,7 +96,7 @@ private[nsq] class NSQDecoder extends ReplayingDecoder[STATE](HEADER) {
             in.readBytes(data)
             MessageFrame(timestamp, attempts, messageId, data)
           case _ ⇒
-            throw new NSQProtocolError(s"bad frame id from server: [$id]")
+            throw NSQProtocolError(s"bad frame id from server: [$id]")
         }
         checkpoint(HEADER)
         out.add(frame)

@@ -1,6 +1,7 @@
 package com.github.mitallast.nsq
 
 import java.net.SocketAddress
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{ConcurrentLinkedQueue, TimeUnit}
 
 import com.typesafe.config.{Config, ConfigFactory}
@@ -185,66 +186,65 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
 
 private[nsq] case object NSQNettyClient {
   val responsesAttr = AttributeKey.valueOf[ConcurrentLinkedQueue[(NSQCommand, Promise[NSQFrame])]]("nsq-responses")
+  val messagesAttr = AttributeKey.valueOf[AtomicLong]("nsq-messages")
   val consumerAttr = AttributeKey.valueOf[NSQMessage ⇒ Unit]("nsq-consumer")
 }
 
-class NSQNettyClient(val config: Config) extends NSQClient {
+class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) extends NSQClient {
 
-  config.checkValid(ConfigFactory.defaultReference(), "scala-nsq")
+  config.checkValid(ConfigFactory.defaultReference(), "nsq")
 
   private[nsq] val V2 = "  V2".getBytes(CharsetUtil.US_ASCII)
   private[nsq] val log = LoggerFactory.getLogger(getClass)
 
-  private[nsq] val epoll: Boolean = config.getBoolean("scala-nsq.epoll")
+  private[nsq] val epoll: Boolean = config.getBoolean("nsq.epoll")
 
-  private[nsq] val threads: Int = config.getInt("scala-nsq.threads")
-  private[nsq] val keepAlive: Boolean = config.getBoolean("scala-nsq.keep-alive")
-  private[nsq] val reuseAddress: Boolean = config.getBoolean("scala-nsq.reuse-address")
-  private[nsq] val tcpNoDelay: Boolean = config.getBoolean("scala-nsq.tcp-no-delay")
-  private[nsq] val sndBuf: Int = config.getInt("scala-nsq.snd-buf")
-  private[nsq] val rcvBuf: Int = config.getInt("scala-nsq.rcv-buf")
-  private[nsq] val wbLow: Int = config.getInt("scala-nsq.wb-low")
-  private[nsq] val wbHigh: Int = config.getInt("scala-nsq.wb-high")
-  private[nsq] val maxConnections: Int = config.getInt("scala-nsq.max-connections")
-  private[nsq] val lookupPeriod = config.getDuration("scala-nsq.lookup-period", MILLISECONDS)
-  private[nsq] val lookupAddressList: List[String] = config.getStringList("scala-nsq.lookup-address").toList
+  private[nsq] val threads: Int = config.getInt("nsq.threads")
+  private[nsq] val keepAlive: Boolean = config.getBoolean("nsq.keep-alive")
+  private[nsq] val reuseAddress: Boolean = config.getBoolean("nsq.reuse-address")
+  private[nsq] val tcpNoDelay: Boolean = config.getBoolean("nsq.tcp-no-delay")
+  private[nsq] val sndBuf: Int = config.getInt("nsq.snd-buf")
+  private[nsq] val rcvBuf: Int = config.getInt("nsq.rcv-buf")
+  private[nsq] val wbLow: Int = config.getInt("nsq.wb-low")
+  private[nsq] val wbHigh: Int = config.getInt("nsq.wb-high")
+  private[nsq] val maxConnections: Int = config.getInt("nsq.max-connections")
+  private[nsq] val maxReadyCount: Int = config.getInt("nsq.max-ready-count")
+  private[nsq] val lookupPeriod = config.getDuration("nsq.lookup-period", MILLISECONDS)
 
   private[nsq] val nsqConfig = {
     var conf = NSQConfig.default
-    if (config.hasPath("scala-nsq.identify.feature-negotiation")){
-      conf = conf.copy(featureNegotiation = config.getBoolean("scala-nsq.identify.feature-negotiation"))
+    if (config.hasPath("nsq.identify.feature-negotiation")) {
+      conf = conf.copy(featureNegotiation = config.getBoolean("nsq.identify.feature-negotiation"))
     }
-    if (config.hasPath("scala-nsq.identify.heartbeat-interval")) {
-      conf = conf.copy(heartbeatInterval = Some(config.getInt("scala-nsq.identify.heartbeat-interval")))
+    if (config.hasPath("nsq.identify.heartbeat-interval")) {
+      conf = conf.copy(heartbeatInterval = Some(config.getInt("nsq.identify.heartbeat-interval")))
     }
-    if (config.hasPath("scala-nsq.identify.output-buffer-size")) {
-      conf = conf.copy(outputBufferSize = Some(config.getInt("scala-nsq.identify.output-buffer-size")))
+    if (config.hasPath("nsq.identify.output-buffer-size")) {
+      conf = conf.copy(outputBufferSize = Some(config.getInt("nsq.identify.output-buffer-size")))
     }
-    if (config.hasPath("scala-nsq.identify.output-buffer-timeout")) {
-      conf = conf.copy(outputBufferTimeout = Some(config.getInt("scala-nsq.identify.output-buffer-timeout")))
+    if (config.hasPath("nsq.identify.output-buffer-timeout")) {
+      conf = conf.copy(outputBufferTimeout = Some(config.getInt("nsq.identify.output-buffer-timeout")))
     }
-    if (config.hasPath("scala-nsq.identify.tls-v1")) {
-      conf = conf.copy(tlsV1 = Some(config.getBoolean("scala-nsq.identify.tls-v1")))
+    if (config.hasPath("nsq.identify.tls-v1")) {
+      conf = conf.copy(tlsV1 = Some(config.getBoolean("nsq.identify.tls-v1")))
     }
-    if (config.hasPath("scala-nsq.identify.snappy")) {
-      conf = conf.copy(snappy = Some(config.getBoolean("scala-nsq.identify.snappy")))
+    if (config.hasPath("nsq.identify.snappy")) {
+      conf = conf.copy(snappy = Some(config.getBoolean("nsq.identify.snappy")))
     }
-    if (config.hasPath("scala-nsq.identify.deflate")) {
-      conf = conf.copy(deflate = Some(config.getBoolean("scala-nsq.identify.deflate")))
+    if (config.hasPath("nsq.identify.deflate")) {
+      conf = conf.copy(deflate = Some(config.getBoolean("nsq.identify.deflate")))
     }
-    if (config.hasPath("scala-nsq.identify.deflate-level")) {
-      conf = conf.copy(deflateLevel = Some(config.getInt("scala-nsq.identify.deflate-level")))
+    if (config.hasPath("nsq.identify.deflate-level")) {
+      conf = conf.copy(deflateLevel = Some(config.getInt("nsq.identify.deflate-level")))
     }
-    if (config.hasPath("scala-nsq.identify.sample-rate")) {
-      conf = conf.copy(sampleRate = Some(config.getInt("scala-nsq.identify.sample-rate")))
+    if (config.hasPath("nsq.identify.sample-rate")) {
+      conf = conf.copy(sampleRate = Some(config.getInt("nsq.identify.sample-rate")))
     }
-    if (config.hasPath("scala-nsq.identify.msg-timeout")) {
-      conf = conf.copy(msgTimeout = Some(config.getInt("scala-nsq.identify.msg-timeout")))
+    if (config.hasPath("nsq.identify.msg-timeout")) {
+      conf = conf.copy(msgTimeout = Some(config.getInt("nsq.identify.msg-timeout")))
     }
     conf
   }
-
-  private[nsq] val lookup = new NSQLookup(lookupAddressList)
 
   private[nsq] def newBootstrap = {
     val threadFactory = new DefaultThreadFactory("nsq-client", true)
@@ -282,6 +282,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
       val responses = new ConcurrentLinkedQueue[(NSQCommand, Promise[NSQFrame])]()
       ctx.channel().attr(NSQConfig.attr).set(NSQConfig.default)
       ctx.channel().attr(NSQNettyClient.responsesAttr).set(responses)
+      ctx.channel().attr(NSQNettyClient.messagesAttr).set(new AtomicLong())
       ctx.writeAndFlush(Unpooled.wrappedBuffer(V2))
       ctx.writeAndFlush(IdentifyCommand(nsqConfig))
     }
@@ -298,7 +299,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
           case null ⇒ // ignore
           case (cmd, promise) ⇒
             log.warn("failed task {}", cmd)
-            promise.failure(new NSQDisconnected("channel closed"))
+            promise.failure(NSQDisconnected("channel closed"))
         }
       }
     }
@@ -370,6 +371,13 @@ class NSQNettyClient(val config: Config) extends NSQClient {
           }
 
         case message: MessageFrame ⇒
+          val messages = ctx.channel().attr(NSQNettyClient.messagesAttr).get()
+          val received = messages.incrementAndGet()
+          if (received % maxReadyCount > (maxReadyCount / 2)) {
+            log.debug("send rdy {} to {}", maxReadyCount, ctx.channel().remoteAddress())
+            ctx.writeAndFlush(RdyCommand(maxReadyCount))
+          }
+
           val consumer = ctx.channel().attr(NSQNettyClient.consumerAttr).get()
           if (consumer != null) {
             val msg = NSQMessageImpl(
@@ -422,7 +430,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
   def producer(): NSQProducer =
     new NSQNettyProducer()
 
-  def consumer(topic: String, channel: String = "default", consumer: NSQMessage ⇒ Unit): NSQConsumer =
+  def consumer(topic: String, channel: String = "default")(consumer: NSQMessage ⇒ Unit): NSQConsumer =
     new NSQNettyConsumer(topic, channel, consumer)
 
   private[nsq] case class NSQMessageImpl(
@@ -492,7 +500,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
     }, lookupPeriod, lookupPeriod, MILLISECONDS)
 
     private[nsq] def connect(address: SocketAddress): Unit = {
-      if (!poolMap.contains(address)){
+      if (!poolMap.contains(address)) {
         val pool = poolMap.get(address)
         pool.acquire().addListener(new FutureListener[Channel] {
           override def operationComplete(future: NettyFuture[Channel]) = {
@@ -559,11 +567,13 @@ class NSQNettyClient(val config: Config) extends NSQClient {
         super.channelActive(ctx)
         ctx.channel().attr(NSQNettyClient.consumerAttr).set(consumer)
 
-        val command = SubCommand(topic, channel)
-        val promise = Promise[NSQFrame]()
+        log.debug("send sub {}:{} to {}", topic, channel, ctx.channel().remoteAddress())
+        val subCommand = SubCommand(topic, channel)
+        ctx.channel().attr(NSQNettyClient.responsesAttr).get().add((subCommand, Promise[NSQFrame]()))
+        ctx.writeAndFlush(subCommand, ctx.voidPromise())
 
-        ctx.channel().attr(NSQNettyClient.responsesAttr).get().add((command, promise))
-        ctx.writeAndFlush(command)
+        log.debug("send rdy {} to {}", maxReadyCount, ctx.channel().remoteAddress())
+        ctx.writeAndFlush(RdyCommand(maxReadyCount), ctx.voidPromise())
       }
     }
 
@@ -591,7 +601,7 @@ class NSQNettyClient(val config: Config) extends NSQClient {
     }, lookupPeriod, lookupPeriod, MILLISECONDS)
 
     private[nsq] def connect(address: SocketAddress): Unit = {
-      if(!poolMap.contains(address)){
+      if (!poolMap.contains(address)) {
         val pool = poolMap.get(address)
         pool.acquire()
           .addListener(new FutureListener[Channel] {
@@ -614,57 +624,6 @@ class NSQNettyClient(val config: Config) extends NSQClient {
     def close() = {
       lookupTask.cancel(true)
       poolMap.close()
-    }
-
-    def ready(count: Int): Unit = {
-      val pools = poolMap.iterator().map(_.getValue).toList
-      val pool = pools.get(Random.nextInt(pools.size))
-      pool.acquire().addListener(new FutureListener[Channel] {
-        override def operationComplete(future: NettyFuture[Channel]): Unit = {
-          if (future.isSuccess) {
-            val channel = future.getNow
-            try {
-              if (log.isDebugEnabled) {
-                log.debug("channel {} active={}", channel, channel.isActive)
-                log.debug("send rdy({}) to {}", count, channel.remoteAddress())
-              }
-              channel.writeAndFlush(RdyCommand(count))
-            } finally {
-              pool.release(channel)
-            }
-          } else if (future.isCancelled) {
-            log.warn("error acquire channel, canceled")
-          } else {
-            log.error("error acquire channel", future.cause())
-          }
-        }
-      }).awaitUninterruptibly()
-    }
-
-    def readyAll(count: Int): Unit = {
-      if (log.isDebugEnabled) {
-        log.debug("send rdy({}) to all", count)
-      }
-      val iterator = poolMap.iterator()
-      while (iterator.hasNext) {
-        val entry = iterator.next()
-        val pool = entry.getValue
-        pool.acquire().addListener(new FutureListener[Channel] {
-          override def operationComplete(future: NettyFuture[Channel]): Unit = {
-            if (future.isSuccess) {
-              val channel = future.getNow
-              try {
-                if (log.isDebugEnabled) {
-                  log.debug("send rdy({}) to {}", count, channel.remoteAddress())
-                }
-                channel.writeAndFlush(RdyCommand(count))
-              } finally {
-                pool.release(channel)
-              }
-            }
-          }
-        })
-      }
     }
   }
 }
