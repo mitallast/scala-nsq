@@ -1,13 +1,14 @@
 package com.github.mitallast.nsq
 
+import java.io.InputStream
 import java.net.{HttpURLConnection, InetSocketAddress, SocketAddress, URL}
 
+import com.github.mitallast.nsq.protocol.JsonParser
 import com.typesafe.config.{Config, ConfigFactory}
-import org.json4s.{DefaultFormats, StreamInput}
-import org.json4s.jackson.JsonMethods._
 import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConversions._
+import scala.io.Source
 
 trait NSQLookup {
 
@@ -29,7 +30,6 @@ object NSQLookup {
 
 class NSQLookupDefault(addresses: List[String]) extends NSQLookup {
   private val log = LoggerFactory.getLogger(getClass)
-  private implicit val formats = DefaultFormats
 
   def lookup(topic: String): List[SocketAddress] = {
     addresses.flatMap { address ⇒
@@ -47,15 +47,7 @@ class NSQLookupDefault(addresses: List[String]) extends NSQLookup {
           case 200 ⇒
             val stream = connection.getInputStream
             try {
-              val json = parse(StreamInput(stream)).camelizeKeys
-              val response = json.extract[LookupResponse]
-              if (log.isDebugEnabled) {
-                log.debug("response: {}", response)
-              }
-
-              response.data.producers.map { producer ⇒
-                new InetSocketAddress(producer.hostname, producer.tcpPort)
-              }
+              parseResponse(stream)
             } finally {
               stream.close()
             }
@@ -68,7 +60,7 @@ class NSQLookupDefault(addresses: List[String]) extends NSQLookup {
           log.warn(s"failed lookup $address", e)
           List.empty
       }
-    }
+    }.distinct
   }
 
   def nodes(): List[SocketAddress] = {
@@ -88,14 +80,7 @@ class NSQLookupDefault(addresses: List[String]) extends NSQLookup {
           case 200 ⇒
             val stream = connection.getInputStream
             try {
-              val json = parse(StreamInput(stream)).camelizeKeys
-              val response = json.extract[LookupResponse]
-              if (log.isDebugEnabled) {
-                log.debug("response: {}", response)
-              }
-              response.data.producers.map { producer ⇒
-                new InetSocketAddress(producer.hostname, producer.tcpPort)
-              }
+              parseResponse(stream)
             } finally {
               stream.close()
             }
@@ -110,16 +95,97 @@ class NSQLookupDefault(addresses: List[String]) extends NSQLookup {
     }
   }
 
-  private[nsq] case class LookupResponse(statusCode: Int, statusTxt: String, data: LookupData)
-  private[nsq] case class LookupData(channels: List[String], producers: List[LookupProducer])
-  private[nsq] case class LookupProducer(
-    remoteAddress: String,
-    hostname: String,
-    broadcastAddress: String,
-    tcpPort: Int,
-    httpPort: Int,
-    version: String,
-    tombstones: List[Boolean],
-    topics: List[String]
-  )
+  private[nsq] def parseResponse(stream: InputStream): List[SocketAddress] = {
+    import JsonParser._
+    val json = Source.fromInputStream(stream).mkString
+    val parser = new JsonParser(json)
+
+    var addresses = List.empty[SocketAddress]
+
+    def parseResponse(): Unit = {
+      assert(parser.next() == startObject)
+      while (true) {
+        parser.next() match {
+          case valueString("data") ⇒
+            parseData()
+          case valueString(field) ⇒
+            parser.skipField()
+          case JsonParser.endObject ⇒
+            return
+          case token ⇒ throw new RuntimeException("unexpected token: " + token)
+        }
+      }
+    }
+
+    def parseData(): Unit = {
+      assert(parser.next() == startObject)
+      while (true) {
+        parser.next() match {
+          case valueString("producers") ⇒
+            parseProducers()
+          case valueString(name) ⇒
+            parser.skipField()
+          case JsonParser.endObject ⇒
+            return
+          case token ⇒ throw new RuntimeException("unexpected token: " + token)
+        }
+      }
+    }
+
+    def parseProducers(): Unit = {
+      assert(parser.next() == startArray)
+      while (true) {
+        parser.next() match {
+          case JsonParser.startObject ⇒
+            parseProducer()
+          case JsonParser.endArray ⇒
+            return
+          case token ⇒ throw new RuntimeException("unexpected token: " + token)
+        }
+      }
+    }
+
+    def parseProducer(): Unit = {
+      var hostname = ""
+      var broadcast_address = ""
+      var tcp_port = 4150
+
+      while (true) {
+        parser.next() match {
+          case valueString("hostname") ⇒
+            parser.next() match {
+              case valueString(addr) ⇒
+                hostname = addr
+              case token ⇒ throw new RuntimeException("unexpected token: " + token)
+            }
+          case valueString("broadcast_address") ⇒
+            parser.next() match {
+              case valueString(addr) ⇒
+                broadcast_address = addr
+              case token ⇒ throw new RuntimeException("unexpected token: " + token)
+            }
+          case valueString("tcp_port") ⇒
+            parser.next() match {
+              case valueLong(port) ⇒
+                tcp_port = port.toInt
+              case token ⇒ throw new RuntimeException("unexpected token: " + token)
+            }
+          case valueString(name) ⇒
+            parser.skipField()
+          case JsonParser.endObject ⇒
+            if (broadcast_address != "") {
+              addresses = addresses ++ List(new InetSocketAddress(broadcast_address, tcp_port))
+            } else if (hostname != "") {
+              addresses = addresses ++ List(new InetSocketAddress(hostname, tcp_port))
+            }
+            return
+          case token ⇒ throw new RuntimeException("unexpected token: " + token)
+        }
+      }
+    }
+
+    parseResponse()
+
+    addresses
+  }
 }

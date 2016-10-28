@@ -4,6 +4,7 @@ import java.net.SocketAddress
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{ConcurrentLinkedQueue, TimeUnit}
 
+import com.github.mitallast.nsq.protocol._
 import com.typesafe.config.{Config, ConfigFactory}
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.{ByteBufAllocator, PooledByteBufAllocator, Unpooled}
@@ -16,17 +17,12 @@ import io.netty.handler.codec.compression.{SnappyFramedDecoder, SnappyFramedEnco
 import io.netty.handler.ssl.SslContextBuilder
 import io.netty.util.concurrent.{DefaultThreadFactory, FutureListener, ScheduledFuture, Future ⇒ NettyFuture}
 import io.netty.util.{AttributeKey, CharsetUtil}
-import com.github.mitallast.nsq.protocol._
 import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConversions._
+import scala.concurrent.duration.{Duration, _}
 import scala.concurrent.{CancellationException, Future, Promise}
-import scala.concurrent.duration._
 import scala.util.Random
-import org.json4s._
-import org.json4s.jackson.JsonMethods._
-
-import scala.concurrent.duration.Duration
 
 private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFrame] {
 
@@ -45,8 +41,6 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
   private var snappy: Boolean = false
   private var deflate: Boolean = false
   private var finished: Boolean = false
-
-  private implicit val formats = DefaultFormats
 
   override def channelRead0(ctx: ChannelHandlerContext, msg: NSQFrame) {
     if (log.isDebugEnabled) {
@@ -159,21 +153,14 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
       return
     }
     else if (message.startsWith("{")) {
-      val json = parse(StringInput(message))
-
-      def check(field: String) = json.findField {
-        case JField("name", JBool.True) ⇒ true
-        case _ ⇒ false
-      }.nonEmpty
-
-      if (check("tls_v1")) {
+      if (message.contains(""""tls_v1":true""")) {
         ssl = true
       }
-      if (check("snappy")) {
+      if (message.contains(""""snappy":true""")) {
         snappy = true
         compression = true
       }
-      if (check("deflate")) {
+      if (message.contains(""""deflate":true""")) {
         deflate = true
         compression = true
       }

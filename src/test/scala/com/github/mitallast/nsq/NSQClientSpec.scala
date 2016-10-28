@@ -21,10 +21,10 @@ class NSQClientSpec extends FlatSpec with Matchers {
   }
 
   "nsq client producer" should "init connection" in producer { (server, client, producer) ⇒
-    server.handle shouldEqual buf("  V2")
+    server.handle() shouldEqual buf("  V2")
     server.send()
 
-    server.handle shouldEqual requestBuf("IDENTIFY\n", json)
+    server.handle() shouldEqual requestBuf("IDENTIFY\n", json)
     server.send(responseBuf("OK"))
   }
 
@@ -33,7 +33,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
     val future = producer.pubStr("test", "hello")
 
-    server.handle shouldEqual requestBuf("PUB test\n", "hello")
+    server.handle() shouldEqual requestBuf("PUB test\n", "hello")
     server.send(responseBuf("OK"))
 
     Await.ready(future, 10.seconds)
@@ -46,7 +46,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
     val future = producer.mpubStr("scala.nsq.test", Array("hello", "world"))
 
-    server.handle shouldEqual requestBuf("MPUB scala.nsq.test\n", buf(buf(2), buf(5), buf("hello"), buf(5), buf("world")))
+    server.handle() shouldEqual requestBuf("MPUB scala.nsq.test\n", buf(buf(2), buf(5), buf("hello"), buf(5), buf("world")))
     server.send(responseBuf("OK"))
 
     Await.ready(future, 10.seconds)

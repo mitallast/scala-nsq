@@ -2,10 +2,8 @@ package com.github.mitallast.nsq.protocol
 
 import java.net.InetAddress
 
-import io.netty.buffer.{ByteBuf, ByteBufOutputStream}
+import io.netty.buffer.ByteBuf
 import io.netty.util.AttributeKey
-import org.json4s.JsonDSL._
-import org.json4s.jackson.JsonMethods._
 
 /**
   *
@@ -73,26 +71,80 @@ case class NSQConfig(
   msgTimeout: Option[Int] = None
 ) {
 
-  def asJson(out: ByteBuf) = {
-    val json = ("client_id" → clientId) ~
-      ("hostname" → hostname) ~
-      ("feature_negotiation" → featureNegotiation) ~
-      ("heartbeat_interval" → heartbeatInterval) ~
-      ("output_buffer_size" → outputBufferSize) ~
-      ("output_buffer_timeout" → outputBufferTimeout) ~
-      ("tls_v1" → tlsV1) ~
-      ("snappy" → snappy) ~
-      ("deflate" → deflate) ~
-      ("deflate_level" → deflateLevel) ~
-      ("sample_rate" → sampleRate) ~
-      ("msg_timeout" → msgTimeout) ~
-      ("user_agent" → userAgent)
+  import NSQConfig._
 
-    mapper.writeValue(new ByteBufOutputStream(out), json)
+  def asJson(out: ByteBuf) = {
+    out.writeByte('{')
+    out.writeStringField("client_id", clientId)
+    out.writeNextStringField("hostname", hostname)
+    out.writeNextBooleanField("feature_negotiation", featureNegotiation)
+    out.writeNextIntField("heartbeat_interval", heartbeatInterval)
+    out.writeNextIntField("output_buffer_size", outputBufferSize)
+    out.writeNextIntField("output_buffer_timeout", outputBufferTimeout)
+    out.writeNextBooleanField("tls_v1", tlsV1)
+    out.writeNextBooleanField("snappy", snappy)
+    out.writeNextBooleanField("deflate", deflate)
+    out.writeNextIntField("deflate_level", deflateLevel)
+    out.writeNextIntField("sample_rate", sampleRate)
+    out.writeNextIntField("msg_timeout", msgTimeout)
+    out.writeNextStringField("user_agent", userAgent)
+    out.writeByte('}')
   }
 }
 
 private[nsq] object NSQConfig {
+
+  implicit class ByteBufAscii(buf: ByteBuf) {
+
+    private def writeField(field: String, value: String): Unit = {
+      buf.writeByte('"')
+      field.foreach(buf.writeByte(_))
+      buf.writeByte('"')
+      buf.writeByte(':')
+      value.foreach(buf.writeByte(_))
+    }
+
+    def writeStringField(field: String, value: String): Unit = {
+      buf.writeByte('"')
+      field.foreach(buf.writeByte(_))
+      buf.writeByte('"')
+      buf.writeByte(':')
+      buf.writeByte('"')
+      value.foreach(buf.writeByte(_))
+      buf.writeByte('"')
+    }
+
+    def writeNextBooleanField(field: String, value: Option[Boolean]): Unit = {
+      if (value.isDefined) {
+        buf.writeByte(',')
+        writeField(field, value.get.toString)
+      }
+    }
+
+    def writeNextIntField(field: String, value: Option[Int]): Unit = {
+      if (value.isDefined) {
+        buf.writeByte(',')
+        writeField(field, value.get.toString)
+      }
+    }
+
+    def writeNextStringField(field: String, value: String): Unit = {
+      buf.writeByte(',')
+      writeStringField(field, value)
+    }
+
+    def writeNextStringField(field: String, value: Option[String]): Unit = {
+      if (value.isDefined) {
+        buf.writeByte(',')
+        writeStringField(field, value.get.toString)
+      }
+    }
+
+    def writeNextBooleanField(field: String, value: Boolean): Unit = {
+      buf.writeByte(',')
+      writeField(field, value.toString)
+    }
+  }
 
   val attr = AttributeKey.valueOf[NSQConfig]("nsq-config")
 

@@ -1,6 +1,6 @@
 organization := "com.github.mitallast"
 name := "scala-nsq"
-version := "1.4"
+version := "1.5"
 
 description := "Scala NSQ client"
 
@@ -12,7 +12,6 @@ libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.21"
 libraryDependencies += "org.slf4j" % "slf4j-simple" % "1.7.21" % "test"
 libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.6" % "test"
 libraryDependencies += "org.scalacheck" %% "scalacheck" % "1.13.2" % "test"
-libraryDependencies += "org.json4s" %% "json4s-jackson" % "3.4.0"
 
 publishMavenStyle := true
 
@@ -23,7 +22,7 @@ publishTo := {
   if (isSnapshot.value)
     Some("snapshots" at nexus + "content/repositories/snapshots")
   else
-    Some("releases"  at nexus + "service/local/staging/deploy/maven2")
+    Some("releases" at nexus + "service/local/staging/deploy/maven2")
 }
 
 publishArtifact in Test := false

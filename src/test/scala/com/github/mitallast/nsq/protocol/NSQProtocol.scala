@@ -23,7 +23,7 @@ object NSQProtocol {
 
   def buf(value: Long) = Unpooled.buffer(8).writeLong(value)
 
-  def buf(value: String) = Unpooled.copiedBuffer(value, CharsetUtil.UTF_8)
+  def buf(value: String) = Unpooled.copiedBuffer(value, CharsetUtil.US_ASCII)
 
   def buf(value: Array[Byte]) = Unpooled.wrappedBuffer(value)
 
