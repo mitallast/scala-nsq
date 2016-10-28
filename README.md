@@ -9,7 +9,7 @@ Client requires scala 2.11.
 For SBT users:
 
 ```scala
-libraryDependencies += "com.github.mitallast" %% "scala-nsq" % "1.3-SNAPSHOT"
+libraryDependencies += "com.github.mitallast" %% "scala-nsq" % "1.4"
 ```
 
 For Maven users:
@@ -18,7 +18,7 @@ For Maven users:
 <dependency>
   <groupId>com.github.mitallast</groupId>
   <artifactId>scala-nsq_2.11</artifactId>
-  <version>1.3-SNAPSHOT</version>
+  <version>1.4</version>
 </dependency>
 ```
 

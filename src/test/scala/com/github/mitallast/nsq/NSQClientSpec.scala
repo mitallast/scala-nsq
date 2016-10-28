@@ -2,7 +2,7 @@ package com.github.mitallast.nsq
 
 import java.util.concurrent.TimeUnit
 
-import com.github.mitallast.nsq.protocol.{NSQProtocol, OK}
+import com.github.mitallast.nsq.protocol.{NSQProtocol, OKFrame}
 import com.typesafe.config.ConfigFactory
 import org.scalatest.{FlatSpec, Matchers}
 
@@ -38,7 +38,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
     Await.ready(future, 10.seconds)
     future.isCompleted shouldBe true
-    future.value.get shouldEqual Success(OK())
+    future.value.get shouldEqual Success(OKFrame)
   }
 
   it should "send mpub command" in producer { (server, client, producer) ⇒
@@ -51,7 +51,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
     Await.ready(future, 10.seconds)
     future.isCompleted shouldBe true
-    future.value.get shouldEqual Success(OK())
+    future.value.get shouldEqual Success(OKFrame)
   }
 
   it should "handle E_INVALID error" in producer { (server, client, producer) ⇒
@@ -102,7 +102,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
   it should "send rdy command" in consumer { (server, client, queue, consumer) ⇒
     server.initialize().ok()
 
-    server.handle shouldEqual buf("RDY 1\n")
+    server.handle() shouldEqual buf("RDY 1\n")
     server.send(messageBuf("hello"))
 
     val message = queue.poll(10, TimeUnit.SECONDS)
@@ -143,7 +143,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
 
     queue.poll(10, TimeUnit.SECONDS).touch()
 
-    server.handle shouldEqual buf(s"TOUCH $messageId\n")
+    server.handle() shouldEqual buf(s"TOUCH $messageId\n")
     server.send()
   }
 
@@ -156,13 +156,13 @@ class NSQClientSpec extends FlatSpec with Matchers {
     val message = queue.poll(10, TimeUnit.SECONDS)
     message.touch(100.millis)
 
-    server.handle shouldEqual buf(s"TOUCH $messageId\n")
+    server.handle() shouldEqual buf(s"TOUCH $messageId\n")
     server.send()
 
-    server.handle shouldEqual buf(s"TOUCH $messageId\n")
+    server.handle() shouldEqual buf(s"TOUCH $messageId\n")
     server.send()
 
-    server.handle shouldEqual buf(s"TOUCH $messageId\n")
+    server.handle() shouldEqual buf(s"TOUCH $messageId\n")
     server.send()
 
     message.fin()

@@ -3,12 +3,12 @@ package com.github.mitallast.nsq
 import java.nio.charset.Charset
 import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 
+import com.github.mitallast.nsq.protocol.{NSQConfig, NSQProtocol}
+import com.typesafe.config.ConfigFactory
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
 import io.netty.buffer.ByteBuf
-import io.netty.channel.{ChannelHandlerContext, ChannelInitializer, SimpleChannelInboundHandler}
 import io.netty.channel.local.{LocalChannel, LocalEventLoopGroup, LocalServerChannel}
-import com.github.mitallast.nsq.protocol.{NSQConfig, NSQDecoder, NSQProtocol}
-import com.typesafe.config.ConfigFactory
+import io.netty.channel.{ChannelHandlerContext, ChannelInitializer, SimpleChannelInboundHandler}
 
 import scala.concurrent.duration._
 
@@ -50,8 +50,8 @@ object NSQLocalClient {
               log.info("message received: {}", msg.toString(Charset.forName("ascii")))
               request.offer(msg)
               response.poll(1, MINUTES).foreach(msg ⇒ {
-                log.info("response: {}", msg.readableBytes())
-                ctx.writeAndFlush(msg)
+                log.info("send response: {}", msg.readableBytes())
+                ctx.writeAndFlush(msg, ctx.voidPromise())
               })
             }
           })
@@ -107,8 +107,9 @@ object NSQLocalClient {
     val client = LocalNSQNettyClient()
     val queue = new LinkedBlockingQueue[NSQMessage](1)
 
-    val consumer = client.consumer(topic) {
-      message ⇒ queue.offer(message)
+    val consumer = client.consumer(topic) { message ⇒
+      log.info("message received: {}", message)
+      queue.offer(message)
     }
 
     try {

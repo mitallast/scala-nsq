@@ -323,7 +323,7 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
         log.debug("frame: {}", frame)
       }
       frame match {
-        case Heartbeat ⇒
+        case HeartbeatFrame ⇒
           ctx.writeAndFlush(NopCommand)
 
         case response: NSQResponseFrame ⇒

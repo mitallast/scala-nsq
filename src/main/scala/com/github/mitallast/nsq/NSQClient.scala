@@ -4,10 +4,11 @@ import java.io.Closeable
 
 import com.typesafe.config.{Config, ConfigFactory}
 import io.netty.util.CharsetUtil
-import com.github.mitallast.nsq.protocol.OK
 
 import scala.concurrent.Future
 import scala.concurrent.duration.Duration
+
+trait OK
 
 trait NSQMessage {
 

@@ -2,20 +2,20 @@ package com.github.mitallast.nsq.protocol
 
 import java.util
 
+import com.github.mitallast.nsq.{NSQError, OK}
 import io.netty.buffer.Unpooled
 import io.netty.util.CharsetUtil
-import com.github.mitallast.nsq.NSQError
 
-private [nsq] sealed trait NSQFrame
-private [nsq] sealed trait NSQResponseFrame extends NSQFrame
+private[nsq] sealed trait NSQFrame
+private[nsq] sealed trait NSQResponseFrame extends NSQFrame
 
-private [nsq] case class OK() extends NSQResponseFrame
-private [nsq] case object Heartbeat extends NSQResponseFrame
-private [nsq] case object CloseWait extends NSQResponseFrame
+private[nsq] case object OKFrame extends NSQResponseFrame with OK
+private[nsq] case object HeartbeatFrame extends NSQResponseFrame
+private[nsq] case object CloseWaitFrame extends NSQResponseFrame
 
-private [nsq] case class ResponseFrame(data: Array[Byte]) extends NSQResponseFrame {
+private[nsq] case class ResponseFrame(data: Array[Byte]) extends NSQResponseFrame {
+
   lazy val message = Unpooled.wrappedBuffer(data).toString(CharsetUtil.UTF_8)
-
 
   override def canEqual(that: Any): Boolean = that.isInstanceOf[ResponseFrame]
 
@@ -27,6 +27,6 @@ private [nsq] case class ResponseFrame(data: Array[Byte]) extends NSQResponseFra
   }
 }
 
-private [nsq] case class ErrorFrame(error: NSQError) extends NSQFrame
+private[nsq] case class ErrorFrame(error: NSQError) extends NSQFrame
 
-private [nsq] case class MessageFrame(timestamp: Long, attempts: Int, messageId: String, data: Array[Byte]) extends NSQFrame
+private[nsq] case class MessageFrame(timestamp: Long, attempts: Int, messageId: String, data: Array[Byte]) extends NSQFrame

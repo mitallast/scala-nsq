@@ -31,16 +31,14 @@ private[nsq] class NSQDecoder extends ReplayingDecoder[STATE](HEADER) {
         val frame: NSQFrame = id match {
           case 0 ⇒
             //subtract 4 because the frame id is included
-            val pos = in.readerIndex()
-
             if (size - 4 == 2 && isOK(in)) {
-              OK()
+              OKFrame
             }
             else if (size - 4 == 10 && isCloseWait(in)) {
-              CloseWait
+              CloseWaitFrame
             }
             else if (size - 4 == 11 && isHeartbeat(in)) {
-              Heartbeat
+              HeartbeatFrame
             }
             else {
               val data = new Array[Byte](size - 4)

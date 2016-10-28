@@ -109,19 +109,19 @@ class NSQDecoderSpec extends FlatSpec with Matchers {
   it should "decode OK response" in {
     val channel = new EmbeddedChannel(new NSQDecoder)
     channel.writeInbound(responseBuf("OK"))
-    channel.readInbound() shouldEqual OK()
+    channel.readInbound() shouldEqual OKFrame
   }
 
   it should "decode CLOSE_WAIT response" in {
     val channel = new EmbeddedChannel(new NSQDecoder)
     channel.writeInbound(responseBuf("CLOSE_WAIT"))
-    channel.readInbound() shouldEqual CloseWait
+    channel.readInbound() shouldEqual CloseWaitFrame
   }
 
   it should "decode _heartbeat_ response" in {
     val channel = new EmbeddedChannel(new NSQDecoder)
     channel.writeInbound(responseBuf("_heartbeat_"))
-    channel.readInbound() shouldEqual Heartbeat
+    channel.readInbound() shouldEqual HeartbeatFrame
   }
 
   it should "decode response" in {
