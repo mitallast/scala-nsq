@@ -1,7 +1,7 @@
 package com.github.mitallast.nsq
 
 import java.nio.charset.Charset
-import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
+import java.util.concurrent.{Executors, LinkedBlockingQueue, TimeUnit}
 
 import com.github.mitallast.nsq.protocol.{NSQConfig, NSQProtocol}
 import com.typesafe.config.ConfigFactory
@@ -37,21 +37,26 @@ object NSQLocalClient {
 
   case class LocalNSQNettyServer() {
 
-    val request = new LinkedBlockingQueue[ByteBuf]()
-    val response = new LinkedBlockingQueue[Option[ByteBuf]]()
+    val request = new LinkedBlockingQueue[ByteBuf](100)
+    val response = new LinkedBlockingQueue[Option[ByteBuf]](100)
+    val executor = Executors.newSingleThreadExecutor()
 
     val bootstrap = new ServerBootstrap()
       .channel(classOf[LocalServerChannel])
-      .group(new LocalEventLoopGroup())
+      .group(new LocalEventLoopGroup(4))
       .childHandler(new ChannelInitializer[LocalChannel] {
         override def initChannel(ch: LocalChannel) = {
-          ch.pipeline().addLast(new SimpleChannelInboundHandler[ByteBuf] {
+          ch.pipeline().addLast(new SimpleChannelInboundHandler[ByteBuf](false) {
             override def channelRead0(ctx: ChannelHandlerContext, msg: ByteBuf) = {
               log.info("message received: {}", msg.toString(Charset.forName("ascii")))
               request.offer(msg)
-              response.poll(1, MINUTES).foreach(msg ⇒ {
-                log.info("send response: {}", msg.readableBytes())
-                ctx.writeAndFlush(msg, ctx.voidPromise())
+              executor.execute(new Runnable {
+                override def run() = {
+                  response.poll(1, MINUTES).foreach(msg ⇒ {
+                    log.info("send response: {}", msg.readableBytes())
+                    ctx.writeAndFlush(msg, ctx.voidPromise())
+                  })
+                }
               })
             }
           })
@@ -65,6 +70,7 @@ object NSQLocalClient {
         channel.close().sync()
       }
       bootstrap.group().shutdownGracefully(10, 10, TimeUnit.MILLISECONDS).sync()
+      executor.shutdownNow()
     }
 
     def handle() = request.poll(1, MINUTES)

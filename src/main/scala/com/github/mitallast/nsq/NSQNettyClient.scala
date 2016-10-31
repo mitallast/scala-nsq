@@ -2,7 +2,8 @@ package com.github.mitallast.nsq
 
 import java.net.SocketAddress
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.{ConcurrentLinkedQueue, TimeUnit}
+import java.util.concurrent.{CompletableFuture, ConcurrentLinkedQueue, TimeUnit}
+import java.util.function.BiConsumer
 
 import com.github.mitallast.nsq.protocol._
 import com.typesafe.config.{Config, ConfigFactory}
@@ -43,71 +44,63 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
   private var finished: Boolean = false
 
   override def channelRead0(ctx: ChannelHandlerContext, msg: NSQFrame) {
-    if (log.isDebugEnabled) {
-      log.debug("frame: {}", msg)
-    }
+    val pipeline = ctx.channel().pipeline()
+    val config = ctx.channel().attr(NSQConfig.attr).get()
     var reinstallDefaultDecoder = true
+
     msg match {
-      case frame: NSQResponseFrame ⇒
+      case _: OK ⇒
+        if (finished) {
+          return
+        }
+        //round 2
+        if (snappy) {
+          reinstallDefaultDecoder = installSnappyDecoder(pipeline)
+        }
+        if (deflate) {
+          reinstallDefaultDecoder = installDeflateDecoder(pipeline)
+        }
+        eject(reinstallDefaultDecoder, pipeline)
 
-        val pipeline = ctx.channel().pipeline()
-        val config = ctx.channel().attr(NSQConfig.attr).get()
+      case response: ResponseFrame ⇒
+        val message = response.message
+        parseIdentify(message)
 
-        frame match {
-          case _: OK ⇒
-            if (finished) {
-              ctx.fireChannelRead(msg)
-              return
-            }
-            //round 2
-            if (snappy) {
-              reinstallDefaultDecoder = installSnappyDecoder(pipeline)
-            }
-            if (deflate) {
-              reinstallDefaultDecoder = installDeflateDecoder(pipeline)
-            }
-            eject(reinstallDefaultDecoder, pipeline)
-
-          case response: ResponseFrame ⇒
-
-            val message = response.message
-            parseIdentify(message)
-
-            if (ssl) {
-              if (log.isDebugEnabled) {
-                log.debug("adding ssl to pipeline")
-              }
-              val sslContext = SslContextBuilder.forClient().build()
-              val sslHandler = sslContext.newHandler(ctx.channel().alloc())
-              pipeline.addBefore(NSQ_DECODER, SSL_HANDLER, sslHandler)
-              if (snappy) {
-                pipeline.addBefore(NSQ_ENCODER, SNAPPY_ENCODER, new SnappyFramedEncoder())
-              }
-              if (deflate) {
-                pipeline.addBefore(NSQ_ENCODER, DEFLATE_ENCODER, ZlibCodecFactory.newZlibEncoder(
-                  ZlibWrapper.NONE,
-                  config.deflateLevel.getOrElse(6)))
-              }
-            }
-            if (!ssl && snappy) {
-              pipeline.addBefore(NSQ_ENCODER, SNAPPY_ENCODER, new SnappyFramedEncoder())
-              reinstallDefaultDecoder = installSnappyDecoder(pipeline)
-            }
-            if (!ssl && deflate) {
-              pipeline.addBefore(NSQ_ENCODER, DEFLATE_ENCODER, ZlibCodecFactory.newZlibEncoder(
-                ZlibWrapper.NONE,
-                config.deflateLevel.getOrElse(6)))
-              reinstallDefaultDecoder = installDeflateDecoder(pipeline)
-            }
-            if (message.contains("version") && finished) {
-              eject(reinstallDefaultDecoder, pipeline)
-            }
-
-          case _ ⇒ ctx.fireChannelRead(msg)
+        if (ssl) {
+          if (log.isDebugEnabled) {
+            log.debug("adding ssl to pipeline")
+          }
+          val sslContext = SslContextBuilder.forClient().build()
+          val sslHandler = sslContext.newHandler(ctx.channel().alloc())
+          pipeline.addBefore(NSQ_DECODER, SSL_HANDLER, sslHandler)
+          if (snappy) {
+            pipeline.addBefore(NSQ_ENCODER, SNAPPY_ENCODER, new SnappyFramedEncoder())
+          }
+          if (deflate) {
+            pipeline.addBefore(NSQ_ENCODER, DEFLATE_ENCODER, ZlibCodecFactory.newZlibEncoder(
+              ZlibWrapper.NONE,
+              config.deflateLevel.getOrElse(6)))
+          }
+        }
+        if (!ssl && snappy) {
+          pipeline.addBefore(NSQ_ENCODER, SNAPPY_ENCODER, new SnappyFramedEncoder())
+          reinstallDefaultDecoder = installSnappyDecoder(pipeline)
+        }
+        if (!ssl && deflate) {
+          pipeline.addBefore(NSQ_ENCODER, DEFLATE_ENCODER, ZlibCodecFactory.newZlibEncoder(
+            ZlibWrapper.NONE,
+            config.deflateLevel.getOrElse(6)))
+          reinstallDefaultDecoder = installDeflateDecoder(pipeline)
+        }
+        if (message.contains("version") && finished) {
+          eject(reinstallDefaultDecoder, pipeline)
         }
 
-      case _ ⇒ ctx.fireChannelRead(msg)
+      case _ ⇒
+        log.warn("unexpected identify response: {}", msg)
+        ctx.fireChannelRead(msg)
     }
+    ctx.channel().attr(NSQNettyClient.identifyAttr).get().complete(Unit)
   }
 
   private def eject(reinstallDefaultDecoder: Boolean, pipeline: ChannelPipeline) = {
@@ -175,6 +168,7 @@ private[nsq] case object NSQNettyClient {
   val responsesAttr = AttributeKey.valueOf[ConcurrentLinkedQueue[(NSQCommand, Promise[NSQFrame])]]("nsq-responses")
   val messagesAttr = AttributeKey.valueOf[AtomicLong]("nsq-messages")
   val consumerAttr = AttributeKey.valueOf[NSQMessage ⇒ Unit]("nsq-consumer")
+  val identifyAttr = AttributeKey.valueOf[CompletableFuture[Unit]]("nsq-identify")
 }
 
 class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) extends NSQClient {
@@ -182,7 +176,7 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
   config.checkValid(ConfigFactory.defaultReference(), "nsq")
 
   private[nsq] val V2 = "  V2".getBytes(CharsetUtil.US_ASCII)
-  private[nsq] val log = LoggerFactory.getLogger(getClass)
+  private[nsq] val log = LoggerFactory.getLogger(NSQNettyClient.getClass)
 
   private[nsq] val epoll: Boolean = config.getBoolean("nsq.epoll")
 
@@ -262,16 +256,17 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
     override def isSharable = true
 
     override def channelActive(ctx: ChannelHandlerContext): Unit = {
-      if (log.isDebugEnabled) {
-        log.debug("channel active {}", ctx)
-      }
-      super.channelActive(ctx)
+      log.info("channel registered {}", ctx.channel())
       val responses = new ConcurrentLinkedQueue[(NSQCommand, Promise[NSQFrame])]()
       ctx.channel().attr(NSQConfig.attr).set(NSQConfig.default)
       ctx.channel().attr(NSQNettyClient.responsesAttr).set(responses)
       ctx.channel().attr(NSQNettyClient.messagesAttr).set(new AtomicLong())
+      ctx.channel().attr(NSQNettyClient.identifyAttr).set(new CompletableFuture[Unit]())
+
       ctx.writeAndFlush(Unpooled.wrappedBuffer(V2))
       ctx.writeAndFlush(IdentifyCommand(nsqConfig))
+
+      ctx.channel().config().setAutoRead(true)
     }
 
     override def channelInactive(ctx: ChannelHandlerContext) = {
@@ -515,7 +510,22 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
           if (future.isSuccess) {
             val channel = future.getNow
             try {
-              promise.completeWith(consumer(channel))
+              val identify = channel.attr(NSQNettyClient.identifyAttr).get()
+              if (identify.isDone) {
+                // throws exception if completed exceptionally
+                identify.get()
+                promise.completeWith(consumer(channel))
+              } else {
+                identify.whenComplete(new BiConsumer[Unit, Throwable] {
+                  override def accept(t: Unit, error: Throwable): Unit = {
+                    if (error == null) {
+                      promise.completeWith(consumer(channel))
+                    } else {
+                      promise.failure(error)
+                    }
+                  }
+                })
+              }
             } finally {
               pool.release(channel)
             }

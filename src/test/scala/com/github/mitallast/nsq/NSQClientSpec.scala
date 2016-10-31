@@ -28,6 +28,26 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.send(responseBuf("OK"))
   }
 
+  it should "not send anything before identify response received" in producer { (server, client, producer) ⇒
+    val future = producer.pubStr("test", "hello")
+
+    server.handle() shouldEqual buf("  V2")
+    server.send()
+
+    server.handle() shouldEqual requestBuf("IDENTIFY\n", json)
+    // check that next message does not written before identify response received
+    Thread.sleep(1000)
+    server.request.isEmpty should be(true)
+    server.send(responseBuf("OK"))
+
+    server.handle() shouldEqual requestBuf("PUB test\n", "hello")
+    server.send(responseBuf("OK"))
+
+    Await.ready(future, 10.seconds)
+    future.isCompleted shouldBe true
+    future.value.get shouldEqual Success(OKFrame)
+  }
+
   it should "send pub command" in producer { (server, client, producer) ⇒
     server.initialize()
 
@@ -86,16 +106,16 @@ class NSQClientSpec extends FlatSpec with Matchers {
   }
 
   "nsq client consumer" should "init connection" in consumer { (server, client, queue, consumer) ⇒
-    server.handle shouldEqual buf("  V2")
+    server.handle() shouldEqual buf("  V2")
     server.send()
 
-    server.handle shouldEqual requestBuf("IDENTIFY\n", json)
+    server.handle() shouldEqual requestBuf("IDENTIFY\n", json)
     server.send(responseBuf("OK"))
 
-    server.handle shouldEqual buf("SUB scala.nsq.test default\n")
+    server.handle() shouldEqual buf("SUB scala.nsq.test default\n")
     server.send(responseBuf("OK"))
 
-    server.handle shouldEqual buf("RDY 1\n")
+    server.handle() shouldEqual buf("RDY 1\n")
     server.send()
   }
 
