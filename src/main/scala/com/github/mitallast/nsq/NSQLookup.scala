@@ -35,7 +35,7 @@ class NSQLookupDefault(addresses: List[String]) extends NSQLookup {
     addresses.flatMap { address ⇒
       try {
         val url = new URL(address)
-        val lookupUrl = new URL(url.getProtocol, url.getHost, url.getPort, "/lookup/?topic=" + topic)
+        val lookupUrl = new URL(url.getProtocol, url.getHost, url.getPort, "/lookup?topic=" + topic)
 
         if (log.isDebugEnabled) {
           log.debug(s"lookup $url topic $topic")
