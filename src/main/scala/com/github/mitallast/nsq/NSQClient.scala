@@ -6,7 +6,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import io.netty.util.CharsetUtil
 
 import scala.concurrent.Future
-import scala.concurrent.duration.Duration
+import scala.concurrent.duration._
 
 trait OK
 
@@ -22,7 +22,7 @@ trait NSQMessage {
 
   def fin(): Unit
 
-  def req(timeout: Int): Unit
+  def req(timeout: Duration = 0.milliseconds): Unit
 
   def touch(): Unit
 

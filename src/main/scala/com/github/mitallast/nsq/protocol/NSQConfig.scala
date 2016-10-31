@@ -62,13 +62,13 @@ case class NSQConfig(
   featureNegotiation: Boolean = true,
   heartbeatInterval: Option[Int] = None,
   outputBufferSize: Option[Int] = None,
-  outputBufferTimeout: Option[Int] = None,
+  outputBufferTimeout: Option[Long] = None,
   tlsV1: Option[Boolean] = None,
   snappy: Option[Boolean] = None,
   deflate: Option[Boolean] = None,
   deflateLevel: Option[Int] = None,
   sampleRate: Option[Int] = None,
-  msgTimeout: Option[Int] = None
+  msgTimeout: Option[Long] = None
 ) {
 
   import NSQConfig._
@@ -80,13 +80,13 @@ case class NSQConfig(
     out.writeNextBooleanField("feature_negotiation", featureNegotiation)
     out.writeNextIntField("heartbeat_interval", heartbeatInterval)
     out.writeNextIntField("output_buffer_size", outputBufferSize)
-    out.writeNextIntField("output_buffer_timeout", outputBufferTimeout)
+    out.writeNextLongField("output_buffer_timeout", outputBufferTimeout)
     out.writeNextBooleanField("tls_v1", tlsV1)
     out.writeNextBooleanField("snappy", snappy)
     out.writeNextBooleanField("deflate", deflate)
     out.writeNextIntField("deflate_level", deflateLevel)
     out.writeNextIntField("sample_rate", sampleRate)
-    out.writeNextIntField("msg_timeout", msgTimeout)
+    out.writeNextLongField("msg_timeout", msgTimeout)
     out.writeNextStringField("user_agent", userAgent)
     out.writeByte('}')
   }
@@ -122,6 +122,13 @@ private[nsq] object NSQConfig {
     }
 
     def writeNextIntField(field: String, value: Option[Int]): Unit = {
+      if (value.isDefined) {
+        buf.writeByte(',')
+        writeField(field, value.get.toString)
+      }
+    }
+
+    def writeNextLongField(field: String, value: Option[Long]): Unit = {
       if (value.isDefined) {
         buf.writeByte(',')
         writeField(field, value.get.toString)

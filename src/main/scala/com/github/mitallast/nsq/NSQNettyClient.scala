@@ -210,7 +210,7 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
       conf = conf.copy(outputBufferSize = Some(config.getInt("nsq.identify.output-buffer-size")))
     }
     if (config.hasPath("nsq.identify.output-buffer-timeout")) {
-      conf = conf.copy(outputBufferTimeout = Some(config.getInt("nsq.identify.output-buffer-timeout")))
+      conf = conf.copy(outputBufferTimeout = Some(config.getDuration("nsq.identify.output-buffer-timeout", TimeUnit.MILLISECONDS)))
     }
     if (config.hasPath("nsq.identify.tls-v1")) {
       conf = conf.copy(tlsV1 = Some(config.getBoolean("nsq.identify.tls-v1")))
@@ -228,7 +228,7 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
       conf = conf.copy(sampleRate = Some(config.getInt("nsq.identify.sample-rate")))
     }
     if (config.hasPath("nsq.identify.msg-timeout")) {
-      conf = conf.copy(msgTimeout = Some(config.getInt("nsq.identify.msg-timeout")))
+      conf = conf.copy(msgTimeout = Some(config.getDuration("nsq.identify.msg-timeout", TimeUnit.MILLISECONDS)))
     }
     conf
   }
@@ -435,9 +435,9 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
       ctx.writeAndFlush(FinCommand(messageId))
     }
 
-    def req(timeout: Int) = {
+    def req(timeout: Duration = 0.milliseconds) = {
       cancelTouch()
-      ctx.writeAndFlush(ReqCommand(messageId, timeout))
+      ctx.writeAndFlush(ReqCommand(messageId, timeout.toMillis.toInt))
     }
 
     def touch() = {

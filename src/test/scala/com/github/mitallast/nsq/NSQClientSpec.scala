@@ -129,7 +129,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.handle()
     server.send(messageBuf("hello"))
 
-    queue.poll(10, TimeUnit.SECONDS).req(100)
+    queue.poll(10, TimeUnit.SECONDS).req(100.milliseconds)
 
     server.handle shouldEqual buf(s"REQ $messageId 100\n")
     server.send()
