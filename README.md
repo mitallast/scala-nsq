@@ -1,3 +1,5 @@
+[![Maven Central](https://img.shields.io/maven-central/v/com.github.mitallast/scala-nsq_2.11.svg)](https://maven-badges.herokuapp.com/maven-central/com.github.mitallast/scala-nsq_2.11)
+
 # Scala NSQ client
 
 Scala NSQ client, based on netty, typesafe config, slf4j and json4s.
