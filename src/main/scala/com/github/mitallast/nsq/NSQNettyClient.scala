@@ -270,8 +270,8 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
     }
 
     override def channelInactive(ctx: ChannelHandlerContext) = {
-      if (log.isDebugEnabled) {
-        log.debug("channel inactive {}", ctx)
+      if (log.isTraceEnabled) {
+        log.trace("channel inactive {}", ctx)
       }
       super.channelInactive(ctx)
       ctx.channel().close()
@@ -301,8 +301,8 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
     }
 
     override def channelRead0(ctx: ChannelHandlerContext, frame: NSQFrame) = {
-      if (log.isDebugEnabled) {
-        log.debug("frame: {}", frame)
+      if (log.isTraceEnabled) {
+        log.trace("frame: {}", frame)
       }
       frame match {
         case HeartbeatFrame ⇒
@@ -356,7 +356,9 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
           val messages = ctx.channel().attr(NSQNettyClient.messagesAttr).get()
           val received = messages.incrementAndGet()
           if (received % maxReadyCount > (maxReadyCount / 2)) {
-            log.debug("send rdy {} to {}", maxReadyCount, ctx.channel().remoteAddress())
+            if (log.isTraceEnabled) {
+              log.trace("send rdy {} to {}", maxReadyCount, ctx.channel().remoteAddress())
+            }
             ctx.writeAndFlush(RdyCommand(maxReadyCount))
           }
 
@@ -389,8 +391,8 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
     val promise = Promise[NSQFrame]()
     channel.eventLoop().execute(new Runnable {
       override def run() = {
-        if (log.isDebugEnabled) {
-          log.debug("command: {}", cmd)
+        if (log.isTraceEnabled) {
+          log.trace("command: {}", cmd)
         }
         val responses = channel.attr(NSQNettyClient.responsesAttr).get()
         responses.add((cmd, promise))
@@ -462,8 +464,8 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
       override def newPool(key: SocketAddress): FixedChannelPool = {
         new FixedChannelPool(bootstrap.remoteAddress(key), new AbstractChannelPoolHandler {
           override def channelCreated(ch: Channel): Unit = {
-            if (log.isDebugEnabled) {
-              log.debug("channel created: {}", key)
+            if (log.isTraceEnabled) {
+              log.trace("channel created: {}", key)
             }
             val pipeline = ch.pipeline
             pipeline.addLast("nsq-decoder", new NSQDecoder())
@@ -489,8 +491,8 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
             if (future.isSuccess) {
               val channel = future.getNow
               try {
-                if (log.isDebugEnabled) {
-                  log.debug("connected: {}", channel.remoteAddress())
+                if (log.isTraceEnabled) {
+                  log.trace("connected: {}", channel.remoteAddress())
                 }
               } finally {
                 pool.release(channel)
@@ -564,12 +566,17 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
         super.channelActive(ctx)
         ctx.channel().attr(NSQNettyClient.consumerAttr).set(consumer)
 
-        log.debug("send sub {}:{} to {}", topic, channel, ctx.channel().remoteAddress())
+        if (log.isTraceEnabled) {
+          log.trace("send sub {}:{} to {}", topic, channel, ctx.channel().remoteAddress())
+        }
+
         val subCommand = SubCommand(topic, channel)
         ctx.channel().attr(NSQNettyClient.responsesAttr).get().add((subCommand, Promise[NSQFrame]()))
         ctx.writeAndFlush(subCommand, ctx.voidPromise())
 
-        log.debug("send rdy {} to {}", maxReadyCount, ctx.channel().remoteAddress())
+        if (log.isTraceEnabled) {
+          log.trace("send rdy {} to {}", maxReadyCount, ctx.channel().remoteAddress())
+        }
         ctx.writeAndFlush(RdyCommand(maxReadyCount), ctx.voidPromise())
       }
     }
@@ -578,8 +585,8 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
       override def newPool(key: SocketAddress) = {
         new FixedChannelPool(bootstrap.remoteAddress(key), new AbstractChannelPoolHandler {
           override def channelCreated(ch: Channel): Unit = {
-            if (log.isDebugEnabled) {
-              log.debug("channel created: {}", key)
+            if (log.isTraceEnabled) {
+              log.trace("channel created: {}", key)
             }
             val pipeline = ch.pipeline
             pipeline.addLast("nsq-decoder", new NSQDecoder())
@@ -605,7 +612,9 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
             override def operationComplete(future: NettyFuture[Channel]) = {
               if (future.isSuccess) {
                 val channel = future.getNow
-                log.debug(s"successfully connected to {}", address)
+                if (log.isTraceEnabled) {
+                  log.debug(s"successfully connected to {}", address)
+                }
                 pool.release(channel)
               } else if (future.isCancelled) {
                 log.warn(s"error connect to {}, canceled", address)

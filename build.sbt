@@ -1,6 +1,6 @@
 organization := "com.github.mitallast"
 name := "scala-nsq"
-version := "1.8"
+version := "1.9"
 
 description := "Scala NSQ client"
 
