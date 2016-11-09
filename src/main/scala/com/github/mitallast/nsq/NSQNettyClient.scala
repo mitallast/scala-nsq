@@ -1,18 +1,19 @@
 package com.github.mitallast.nsq
 
+import java.lang.Boolean
 import java.net.SocketAddress
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.{CompletableFuture, ConcurrentLinkedQueue, TimeUnit}
-import java.util.function.BiConsumer
+import java.util.concurrent.{ConcurrentLinkedQueue, TimeUnit}
 
 import com.github.mitallast.nsq.protocol._
+import com.sun.net.httpserver.Authenticator.Failure
 import com.typesafe.config.{Config, ConfigFactory}
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.{ByteBufAllocator, PooledByteBufAllocator, Unpooled}
 import io.netty.channel._
 import io.netty.channel.epoll.{Epoll, EpollEventLoopGroup, EpollSocketChannel}
 import io.netty.channel.nio.NioEventLoopGroup
-import io.netty.channel.pool._
+import io.netty.channel.pool.{FixedChannelPool, _}
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.codec.compression.{SnappyFramedDecoder, SnappyFramedEncoder, ZlibCodecFactory, ZlibWrapper}
 import io.netty.handler.ssl.SslContextBuilder
@@ -21,9 +22,10 @@ import io.netty.util.{AttributeKey, CharsetUtil}
 import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConversions._
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration.{Duration, _}
 import scala.concurrent.{CancellationException, Future, Promise}
-import scala.util.Random
+import scala.util.{Random, Success}
 
 private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFrame] {
 
@@ -100,7 +102,7 @@ private[nsq] class NSQIdentifyHandler extends SimpleChannelInboundHandler[NSQFra
         log.warn("unexpected identify response: {}", msg)
         ctx.fireChannelRead(msg)
     }
-    ctx.channel().attr(NSQNettyClient.identifyAttr).get().complete(Unit)
+    ctx.channel().attr(NSQNettyClient.identifyAttr).get().complete(Success(Unit))
   }
 
   private def eject(reinstallDefaultDecoder: Boolean, pipeline: ChannelPipeline) = {
@@ -168,7 +170,8 @@ private[nsq] case object NSQNettyClient {
   val responsesAttr = AttributeKey.valueOf[ConcurrentLinkedQueue[(NSQCommand, Promise[NSQFrame])]]("nsq-responses")
   val messagesAttr = AttributeKey.valueOf[AtomicLong]("nsq-messages")
   val consumerAttr = AttributeKey.valueOf[NSQMessage ⇒ Unit]("nsq-consumer")
-  val identifyAttr = AttributeKey.valueOf[CompletableFuture[Unit]]("nsq-identify")
+  val identifyAttr = AttributeKey.valueOf[Promise[Unit]]("nsq-identify")
+  val heartbeatAttr = AttributeKey.valueOf[Long]("nsq-heartbeat")
 }
 
 class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) extends NSQClient {
@@ -253,26 +256,56 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
 
   private[nsq] class NSQChannelInboundHandler extends SimpleChannelInboundHandler[NSQFrame] {
 
-    override def isSharable = true
-
-    override def channelActive(ctx: ChannelHandlerContext): Unit = {
+    override def channelRegistered(ctx: ChannelHandlerContext): Unit = {
       log.info("channel registered {}", ctx.channel())
       val responses = new ConcurrentLinkedQueue[(NSQCommand, Promise[NSQFrame])]()
-      ctx.channel().attr(NSQConfig.attr).set(NSQConfig.default)
+      ctx.channel().attr(NSQConfig.attr).set(nsqConfig)
       ctx.channel().attr(NSQNettyClient.responsesAttr).set(responses)
       ctx.channel().attr(NSQNettyClient.messagesAttr).set(new AtomicLong())
-      ctx.channel().attr(NSQNettyClient.identifyAttr).set(new CompletableFuture[Unit]())
+      ctx.channel().attr(NSQNettyClient.identifyAttr).set(Promise())
+      log.info("channel initialized")
+    }
 
+
+    override def channelActive(ctx: ChannelHandlerContext): Unit = {
       ctx.writeAndFlush(Unpooled.wrappedBuffer(V2))
       ctx.writeAndFlush(IdentifyCommand(nsqConfig))
+      heartbeat(ctx)
+      scheduleHeartbeat(ctx)
+    }
 
-      ctx.channel().config().setAutoRead(true)
+    def scheduleHeartbeat(ctx: ChannelHandlerContext): Unit = {
+      val heartbeatInterval = ctx.channel().attr(NSQConfig.attr).get().heartbeatInterval
+      if (heartbeatInterval.exists(_ > 0)) {
+        log.info("schedule heartbeat {}ms", heartbeatInterval.get)
+        ctx.executor().schedule(new Runnable {
+          override def run() = {
+            if (ctx.channel().isRegistered) {
+              val heartbeatInterval = ctx.channel().attr(NSQConfig.attr).get().heartbeatInterval
+              val heartbeat = ctx.channel().attr(NSQNettyClient.heartbeatAttr).get()
+              if (heartbeatInterval.exists(_ > 0)) {
+                if (heartbeat < (System.currentTimeMillis() - (heartbeatInterval.get * 2))) {
+                  log.warn("heartbeat timeout")
+                  ctx.channel().close()
+                } else {
+                  scheduleHeartbeat(ctx)
+                }
+              }
+            }
+          }
+        }, heartbeatInterval.get, TimeUnit.MILLISECONDS)
+      }
+    }
+
+    def heartbeat(ctx: ChannelHandlerContext) = {
+      val heartbeatInterval = ctx.channel().attr(NSQConfig.attr).get().heartbeatInterval
+      if (heartbeatInterval.exists(_ > 0)) {
+        ctx.channel().attr(NSQNettyClient.heartbeatAttr).set(System.currentTimeMillis())
+      }
     }
 
     override def channelInactive(ctx: ChannelHandlerContext) = {
-      if (log.isTraceEnabled) {
-        log.trace("channel inactive {}", ctx)
-      }
+      log.info("channel inactive {}", ctx.channel())
       super.channelInactive(ctx)
       ctx.channel().close()
       val responses = ctx.channel().attr(NSQNettyClient.responsesAttr).get()
@@ -306,6 +339,7 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
       }
       frame match {
         case HeartbeatFrame ⇒
+          heartbeat(ctx)
           ctx.writeAndFlush(NopCommand)
 
         case response: NSQResponseFrame ⇒
@@ -458,92 +492,158 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
     }
   }
 
-  private[nsq] class NSQNettyProducer extends NSQProducer {
+  private sealed trait NSQNettyPool {
 
-    private[nsq] val poolMap = new AbstractChannelPoolMap[SocketAddress, FixedChannelPool] {
+    @volatile private var closed = false
+
+    private val poolMap = new AbstractChannelPoolMap[SocketAddress, FixedChannelPool] {
       override def newPool(key: SocketAddress): FixedChannelPool = {
         new FixedChannelPool(bootstrap.remoteAddress(key), new AbstractChannelPoolHandler {
-          override def channelCreated(ch: Channel): Unit = {
+          override def channelCreated(channel: Channel): Unit = {
             if (log.isTraceEnabled) {
               log.trace("channel created: {}", key)
             }
-            val pipeline = ch.pipeline
+            val pipeline = channel.pipeline
             pipeline.addLast("nsq-decoder", new NSQDecoder())
             pipeline.addLast("nsq-encoder", new NSQEncoder())
             pipeline.addLast("nsq-identity-handler", new NSQIdentifyHandler())
             pipeline.addLast("nsq-handler", new NSQChannelInboundHandler())
+            channel.closeFuture().addListener(new FutureListener[Void] {
+              override def operationComplete(future: NettyFuture[Void]) = {
+                reconnect(key)
+              }
+            })
           }
-        }, maxConnections)
+        }, new NSQChannelHealthChecker, null, -1, maxConnections, Integer.MAX_VALUE, true)
       }
     }
 
-    lookup.nodes().foreach(connect)
-
-    private[nsq] val lookupTask = bootstrap.group().scheduleWithFixedDelay(new Runnable {
-      override def run() = lookup.nodes().foreach(connect)
-    }, lookupPeriod, lookupPeriod, MILLISECONDS)
-
-    private[nsq] def connect(address: SocketAddress): Unit = {
-      if (!poolMap.contains(address)) {
-        val pool = poolMap.get(address)
-        pool.acquire().addListener(new FutureListener[Channel] {
+    def connection[T](consumer: Channel ⇒ Future[T]): Future[T] = {
+      val promise = Promise[T]()
+      val pools = poolMap.iterator().map(_.getValue).toList
+      val pool = pools.get(Random.nextInt(pools.size))
+      val channelFuture = pool.acquire()
+      if (channelFuture.isDone) {
+        if (channelFuture.isSuccess) {
+          val channel = channelFuture.getNow
+          try {
+            val identify = channel.attr(NSQNettyClient.identifyAttr).get()
+            promise.completeWith(identify.future.flatMap(_ ⇒ consumer(channel)))
+          } finally {
+            pool.release(channel)
+          }
+        } else if (channelFuture.isCancelled) {
+          promise.failure(new CancellationException())
+        } else {
+          promise.failure(channelFuture.cause())
+        }
+      } else {
+        channelFuture.addListener(new FutureListener[Channel] {
           override def operationComplete(future: NettyFuture[Channel]) = {
             if (future.isSuccess) {
               val channel = future.getNow
               try {
-                if (log.isTraceEnabled) {
-                  log.trace("connected: {}", channel.remoteAddress())
-                }
+                val identify = channel.attr(NSQNettyClient.identifyAttr).get()
+                promise.completeWith(identify.future.flatMap(_ ⇒ consumer(channel)))
               } finally {
                 pool.release(channel)
               }
+            } else if (future.isCancelled) {
+              promise.failure(new CancellationException())
+            } else {
+              promise.failure(future.cause())
+            }
+          }
+        })
+      }
+      promise.future
+    }
+
+    private def connect(address: SocketAddress): Unit = {
+      val pool = poolMap.get(address)
+      val channelFuture = pool.acquire()
+      if (channelFuture.isDone) {
+        if (channelFuture.isSuccess) {
+          val channel = channelFuture.getNow
+          log.info(s"successfully connected to {}", address)
+          channelCreated(channel)
+          pool.release(channel)
+        } else if (channelFuture.isCancelled) {
+          log.warn(s"error connect to {}, canceled", address)
+        } else {
+          log.error(s"error connect to $address", channelFuture.cause())
+        }
+      } else {
+        channelFuture.addListener(new FutureListener[Channel] {
+          override def operationComplete(future: NettyFuture[Channel]) = {
+            if (future.isSuccess) {
+              val channel = future.getNow
+              log.info(s"successfully connected to {}", address)
+              channelCreated(channel)
+              pool.release(channel)
+            } else if (future.isCancelled) {
+              log.warn(s"error connect to {}, canceled", address)
+            } else {
+              log.error(s"error connect to $address", future.cause())
             }
           }
         }).awaitUninterruptibly()
       }
     }
 
-    private[nsq] def connection[T](consumer: Channel ⇒ Future[T]): Future[T] = {
-      val promise = Promise[T]()
-      val pools = poolMap.iterator().map(_.getValue).toList
-      val pool = pools.get(Random.nextInt(pools.size))
-      pool.acquire().addListener(new FutureListener[Channel] {
-        override def operationComplete(future: NettyFuture[Channel]) = {
-          if (future.isSuccess) {
-            val channel = future.getNow
-            try {
-              val identify = channel.attr(NSQNettyClient.identifyAttr).get()
-              if (identify.isDone) {
-                // throws exception if completed exceptionally
-                identify.get()
-                promise.completeWith(consumer(channel))
-              } else {
-                identify.whenComplete(new BiConsumer[Unit, Throwable] {
-                  override def accept(t: Unit, error: Throwable): Unit = {
-                    if (error == null) {
-                      promise.completeWith(consumer(channel))
-                    } else {
-                      promise.failure(error)
-                    }
-                  }
-                })
-              }
-            } finally {
-              pool.release(channel)
-            }
-          } else if (future.isCancelled) {
-            promise.failure(new CancellationException())
-          } else {
-            promise.failure(future.cause())
-          }
+    private def reconnect(address: SocketAddress): Unit = {
+      Future {
+        if (!closed) {
+          log.warn("reconnect")
+          connect(address)
         }
-      })
-      promise.future
+      }
     }
 
-    def close() = {
-      lookupTask.cancel(true)
+    def put(address: SocketAddress): Unit = {
+      if (!poolMap.contains(address)) {
+        connect(address)
+      }
+    }
+
+    def channelCreated(channel: Channel): Unit = {}
+
+    def close(): Unit = {
+      closed = true
       poolMap.close()
+    }
+
+    private class NSQChannelHealthChecker extends ChannelHealthChecker {
+      override def isHealthy(channel: Channel): NettyFuture[Boolean] = {
+        log.info("check health")
+        val loop: EventLoop = channel.eventLoop
+        if (!channel.isActive) {
+          return loop.newSucceededFuture(Boolean.FALSE)
+        }
+        val heartbeatInterval = channel.attr(NSQConfig.attr).get().heartbeatInterval
+        if (heartbeatInterval.exists(_ > 0)) {
+          val heartbeat = channel.attr(NSQNettyClient.heartbeatAttr).get()
+          if (heartbeat < (System.currentTimeMillis() - (heartbeatInterval.get * 2))) {
+            log.warn("heartbeat timeout")
+            return loop.newSucceededFuture(Boolean.FALSE)
+          }
+        }
+        loop.newSucceededFuture(Boolean.TRUE)
+      }
+    }
+  }
+
+  private class NSQNettyProducer extends NSQProducer with NSQNettyPool {
+
+    lookup.nodes().foreach(put)
+
+    private val lookupTask = bootstrap.group().scheduleWithFixedDelay(new Runnable {
+      override def run() = lookup.nodes().foreach(put)
+    }, lookupPeriod, lookupPeriod, MILLISECONDS)
+
+    override def close() = {
+      lookupTask.cancel(true)
+      super.close()
     }
 
     def pub(topic: String, data: Array[Byte]): Future[OK] = {
@@ -559,77 +659,33 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
     }
   }
 
-  private[nsq] class NSQNettyConsumer(topic: String, channel: String = "default", consumer: NSQMessage ⇒ Unit) extends NSQConsumer {
+  private class NSQNettyConsumer(topic: String, channel: String = "default", consumer: NSQMessage ⇒ Unit)
+    extends NSQConsumer with NSQNettyPool {
 
-    private[nsq] class NSQConsumerChannelInboundHandler extends NSQChannelInboundHandler {
-      override def channelActive(ctx: ChannelHandlerContext): Unit = {
-        super.channelActive(ctx)
-        ctx.channel().attr(NSQNettyClient.consumerAttr).set(consumer)
+    lookup.lookup(topic).foreach(put)
 
-        if (log.isTraceEnabled) {
-          log.trace("send sub {}:{} to {}", topic, channel, ctx.channel().remoteAddress())
-        }
-
-        val subCommand = SubCommand(topic, channel)
-        ctx.channel().attr(NSQNettyClient.responsesAttr).get().add((subCommand, Promise[NSQFrame]()))
-        ctx.writeAndFlush(subCommand, ctx.voidPromise())
-
-        if (log.isTraceEnabled) {
-          log.trace("send rdy {} to {}", maxReadyCount, ctx.channel().remoteAddress())
-        }
-        ctx.writeAndFlush(RdyCommand(maxReadyCount), ctx.voidPromise())
-      }
-    }
-
-    private val poolMap = new AbstractChannelPoolMap[SocketAddress, FixedChannelPool] {
-      override def newPool(key: SocketAddress) = {
-        new FixedChannelPool(bootstrap.remoteAddress(key), new AbstractChannelPoolHandler {
-          override def channelCreated(ch: Channel): Unit = {
-            if (log.isTraceEnabled) {
-              log.trace("channel created: {}", key)
-            }
-            val pipeline = ch.pipeline
-            pipeline.addLast("nsq-decoder", new NSQDecoder())
-            pipeline.addLast("nsq-encoder", new NSQEncoder())
-            pipeline.addLast("nsq-identity-handler", new NSQIdentifyHandler())
-            pipeline.addLast("nsq-handler", new NSQConsumerChannelInboundHandler())
-          }
-        }, maxConnections)
-      }
-    }
-
-    lookup.lookup(topic).foreach(connect)
-
-    private[nsq] val lookupTask = bootstrap.group().scheduleWithFixedDelay(new Runnable {
-      override def run() = lookup.nodes().foreach(connect)
+    private val lookupTask = bootstrap.group().scheduleWithFixedDelay(new Runnable {
+      override def run() = lookup.nodes().foreach(put)
     }, lookupPeriod, lookupPeriod, MILLISECONDS)
 
-    private[nsq] def connect(address: SocketAddress): Unit = {
-      if (!poolMap.contains(address)) {
-        val pool = poolMap.get(address)
-        pool.acquire()
-          .addListener(new FutureListener[Channel] {
-            override def operationComplete(future: NettyFuture[Channel]) = {
-              if (future.isSuccess) {
-                val channel = future.getNow
-                if (log.isTraceEnabled) {
-                  log.debug(s"successfully connected to {}", address)
-                }
-                pool.release(channel)
-              } else if (future.isCancelled) {
-                log.warn(s"error connect to {}, canceled", address)
-              } else {
-                log.error(s"error connect to $address", future.cause())
-              }
-            }
-          })
-          .awaitUninterruptibly()
+    override def channelCreated(ch: Channel): Unit = {
+      log.info("subscribe after identify")
+      ch.attr(NSQNettyClient.identifyAttr).get().future.onComplete {
+        case Success(_) ⇒
+          ch.attr(NSQNettyClient.consumerAttr).set(consumer)
+          log.info("send sub {}:{} to {}", topic, channel, ch.remoteAddress())
+          val subCommand = SubCommand(topic, channel)
+          ch.attr(NSQNettyClient.responsesAttr).get().add((subCommand, Promise[NSQFrame]()))
+          ch.writeAndFlush(subCommand, ch.voidPromise())
+          log.info("send rdy {} to {}", maxReadyCount, ch.remoteAddress())
+          ch.writeAndFlush(RdyCommand(maxReadyCount), ch.voidPromise())
+        case _ ⇒
       }
     }
 
-    def close() = {
+    override def close() = {
       lookupTask.cancel(true)
-      poolMap.close()
+      super.close()
     }
   }
 }

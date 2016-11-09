@@ -158,6 +158,6 @@ private[nsq] object NSQConfig {
   def default = NSQConfig(
     clientId = InetAddress.getLocalHost.getHostName,
     hostname = InetAddress.getLocalHost.getCanonicalHostName,
-    userAgent = "scala-nsq/1.9"
+    userAgent = "scala-nsq/1.10"
   )
 }

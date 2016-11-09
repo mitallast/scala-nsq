@@ -11,7 +11,7 @@ object NSQProtocol {
   val log = LoggerFactory.getLogger(getClass)
   val config = ConfigFactory.load("nsq")
   val localAddr = new LocalAddress("nsq.id")
-  val json ="""{"client_id":"test","hostname":"localhost","feature_negotiation":true,"user_agent":"test"}"""
+  val json ="""{"client_id":"test","hostname":"localhost","feature_negotiation":true,"heartbeat_interval":1000,"user_agent":"test"}"""
   val timestamp = System.currentTimeMillis()
   val attempts = 2
   val messageId = "WCKHEOWCMPWECHWQ"

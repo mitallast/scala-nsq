@@ -6,7 +6,7 @@ import java.util.concurrent.{Executors, LinkedBlockingQueue, TimeUnit}
 import com.github.mitallast.nsq.protocol.{NSQConfig, NSQProtocol}
 import com.typesafe.config.ConfigFactory
 import io.netty.bootstrap.{Bootstrap, ServerBootstrap}
-import io.netty.buffer.ByteBuf
+import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel.local.{LocalChannel, LocalEventLoopGroup, LocalServerChannel}
 import io.netty.channel.{ChannelHandlerContext, ChannelInitializer, SimpleChannelInboundHandler}
 
@@ -29,8 +29,7 @@ object NSQLocalClient {
       .channel(classOf[LocalChannel])
       .group(new LocalEventLoopGroup())
 
-    override private[nsq] val nsqConfig: NSQConfig = NSQConfig("test", "localhost", "test")
-
+    override private[nsq] val nsqConfig: NSQConfig = NSQConfig("test", "localhost", "test", heartbeatInterval = Some(1000))
 
     override def close(): Unit = bootstrap.group().shutdownGracefully(10, 10, TimeUnit.MILLISECONDS).sync()
   }
@@ -52,9 +51,14 @@ object NSQLocalClient {
               request.offer(msg)
               executor.execute(new Runnable {
                 override def run() = {
-                  response.poll(1, MINUTES).foreach(msg ⇒ {
-                    log.info("send response: {}", msg.readableBytes())
-                    ctx.writeAndFlush(msg, ctx.voidPromise())
+                  response.poll(10, MINUTES).foreach(msg ⇒ {
+                    if (msg.readableBytes() == 0) {
+                      log.info("close client channel")
+                      ctx.channel().close()
+                    } else {
+                      log.info("send response: {}", msg.readableBytes())
+                      ctx.writeAndFlush(msg, ctx.voidPromise())
+                    }
                   })
                 }
               })
@@ -81,6 +85,11 @@ object NSQLocalClient {
       handle()
       send()
       this
+    }
+
+    def closeClient() = {
+      send(Unpooled.EMPTY_BUFFER)
+      request.clear()
     }
 
     def ok() = {

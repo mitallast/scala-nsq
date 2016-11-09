@@ -28,6 +28,37 @@ class NSQClientSpec extends FlatSpec with Matchers {
     server.send(responseBuf("OK"))
   }
 
+  it should "reconnect on heartbeat timeout" in producer { (server, client, producer) ⇒
+    server.handle() shouldEqual buf("  V2")
+    server.send()
+
+    server.handle() shouldEqual requestBuf("IDENTIFY\n", json)
+    server.send(responseBuf("OK"))
+
+    // reconnect
+
+    server.handle() shouldEqual buf("  V2")
+    server.send()
+
+    server.handle() shouldEqual requestBuf("IDENTIFY\n", json)
+    server.send(responseBuf("OK"))
+  }
+
+  it should "reconnect without identify response" in producer { (server, client, producer) ⇒
+    server.handle() shouldEqual buf("  V2")
+    server.send()
+    server.handle() shouldEqual requestBuf("IDENTIFY\n", json)
+    server.closeClient()
+
+    // reconnect
+
+    server.handle() shouldEqual buf("  V2")
+    server.send()
+
+    server.handle() shouldEqual requestBuf("IDENTIFY\n", json)
+    server.send(responseBuf("OK"))
+  }
+
   it should "not send anything before identify response received" in producer { (server, client, producer) ⇒
     val future = producer.pubStr("test", "hello")
 
@@ -85,7 +116,7 @@ class NSQClientSpec extends FlatSpec with Matchers {
   it should "cancel futures on close server channel" in producer { (server, client, producer) ⇒
     server.initialize()
     val future = producer.pubStr("test", "message")
-    server.skip().close()
+    server.skip().closeClient()
     an[NSQDisconnected] should be thrownBy Await.result(future, 10.seconds)
   }
 
@@ -106,6 +137,55 @@ class NSQClientSpec extends FlatSpec with Matchers {
   }
 
   "nsq client consumer" should "init connection" in consumer { (server, client, queue, consumer) ⇒
+    server.handle() shouldEqual buf("  V2")
+    server.send()
+
+    server.handle() shouldEqual requestBuf("IDENTIFY\n", json)
+    server.send(responseBuf("OK"))
+
+    server.handle() shouldEqual buf("SUB scala.nsq.test default\n")
+    server.send(responseBuf("OK"))
+
+    server.handle() shouldEqual buf("RDY 1\n")
+    server.send()
+  }
+
+  it should "reconnect on heartbeat timeout" in consumer { (server, client, queue, consumer) ⇒
+    server.handle() shouldEqual buf("  V2")
+    server.send()
+
+    server.handle() shouldEqual requestBuf("IDENTIFY\n", json)
+    server.send(responseBuf("OK"))
+
+    server.handle() shouldEqual buf("SUB scala.nsq.test default\n")
+    server.send(responseBuf("OK"))
+
+    server.handle() shouldEqual buf("RDY 1\n")
+    server.send()
+
+    // wait for timeout
+
+    server.handle() shouldEqual buf("  V2")
+    server.send()
+
+    server.handle() shouldEqual requestBuf("IDENTIFY\n", json)
+    server.send(responseBuf("OK"))
+
+    server.handle() shouldEqual buf("SUB scala.nsq.test default\n")
+    server.send(responseBuf("OK"))
+
+    server.handle() shouldEqual buf("RDY 1\n")
+    server.send()
+  }
+
+  it should "reconnect without identify response" in consumer { (server, client, queue, consumer) ⇒
+    server.handle() shouldEqual buf("  V2")
+    server.send()
+    server.handle() shouldEqual requestBuf("IDENTIFY\n", json)
+    server.closeClient()
+
+    // wait for timeout
+
     server.handle() shouldEqual buf("  V2")
     server.send()
 
