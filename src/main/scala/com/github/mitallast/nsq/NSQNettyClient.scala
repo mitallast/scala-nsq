@@ -257,17 +257,21 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
   private[nsq] class NSQChannelInboundHandler extends SimpleChannelInboundHandler[NSQFrame] {
 
     override def channelRegistered(ctx: ChannelHandlerContext): Unit = {
-      log.info("channel registered {}", ctx.channel())
+      if (log.isDebugEnabled) {
+        log.debug("channel registered {}", ctx.channel())
+      }
       val responses = new ConcurrentLinkedQueue[(NSQCommand, Promise[NSQFrame])]()
       ctx.channel().attr(NSQConfig.attr).set(nsqConfig)
       ctx.channel().attr(NSQNettyClient.responsesAttr).set(responses)
       ctx.channel().attr(NSQNettyClient.messagesAttr).set(new AtomicLong())
       ctx.channel().attr(NSQNettyClient.identifyAttr).set(Promise())
-      log.info("channel initialized")
     }
 
 
     override def channelActive(ctx: ChannelHandlerContext): Unit = {
+      if (log.isDebugEnabled) {
+        log.debug("channel active {}", ctx.channel())
+      }
       ctx.writeAndFlush(Unpooled.wrappedBuffer(V2))
       ctx.writeAndFlush(IdentifyCommand(nsqConfig))
       heartbeat(ctx)
@@ -277,7 +281,9 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
     def scheduleHeartbeat(ctx: ChannelHandlerContext): Unit = {
       val heartbeatInterval = ctx.channel().attr(NSQConfig.attr).get().heartbeatInterval
       if (heartbeatInterval.exists(_ > 0)) {
-        log.info("schedule heartbeat {}ms", heartbeatInterval.get)
+        if (log.isTraceEnabled()) {
+          log.trace("schedule heartbeat {}ms", heartbeatInterval.get)
+        }
         ctx.executor().schedule(new Runnable {
           override def run() = {
             if (ctx.channel().isRegistered) {
@@ -285,7 +291,7 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
               val heartbeat = ctx.channel().attr(NSQNettyClient.heartbeatAttr).get()
               if (heartbeatInterval.exists(_ > 0)) {
                 if (heartbeat < (System.currentTimeMillis() - (heartbeatInterval.get * 2))) {
-                  log.warn("heartbeat timeout")
+                  log.warn("heartbeat timeout at {}", ctx.channel())
                   ctx.channel().close()
                 } else {
                   scheduleHeartbeat(ctx)
@@ -305,7 +311,9 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
     }
 
     override def channelInactive(ctx: ChannelHandlerContext) = {
-      log.info("channel inactive {}", ctx.channel())
+      if (log.isDebugEnabled) {
+        log.debug("channel inactive {}", ctx.channel())
+      }
       super.channelInactive(ctx)
       ctx.channel().close()
       val responses = ctx.channel().attr(NSQNettyClient.responsesAttr).get()
@@ -565,7 +573,9 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
       if (channelFuture.isDone) {
         if (channelFuture.isSuccess) {
           val channel = channelFuture.getNow
-          log.info(s"successfully connected to {}", address)
+          if (log.isDebugEnabled) {
+            log.debug(s"successfully connected to {}", address)
+          }
           channelCreated(channel)
           pool.release(channel)
         } else if (channelFuture.isCancelled) {
@@ -578,7 +588,9 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
           override def operationComplete(future: NettyFuture[Channel]) = {
             if (future.isSuccess) {
               val channel = future.getNow
-              log.info(s"successfully connected to {}", address)
+              if (log.isDebugEnabled) {
+                log.debug(s"successfully connected to {}", address)
+              }
               channelCreated(channel)
               pool.release(channel)
             } else if (future.isCancelled) {
@@ -615,7 +627,9 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
 
     private class NSQChannelHealthChecker extends ChannelHealthChecker {
       override def isHealthy(channel: Channel): NettyFuture[Boolean] = {
-        log.info("check health")
+        if (log.isTraceEnabled) {
+          log.trace("check health")
+        }
         val loop: EventLoop = channel.eventLoop
         if (!channel.isActive) {
           return loop.newSucceededFuture(Boolean.FALSE)
@@ -669,15 +683,18 @@ class NSQNettyClient(private val lookup: NSQLookup, private val config: Config) 
     }, lookupPeriod, lookupPeriod, MILLISECONDS)
 
     override def channelCreated(ch: Channel): Unit = {
-      log.info("subscribe after identify")
       ch.attr(NSQNettyClient.identifyAttr).get().future.onComplete {
         case Success(_) ⇒
           ch.attr(NSQNettyClient.consumerAttr).set(consumer)
-          log.info("send sub {}:{} to {}", topic, channel, ch.remoteAddress())
+          if (log.isTraceEnabled()) {
+            log.trace("send sub {}:{} to {}", topic, channel, ch.remoteAddress())
+          }
           val subCommand = SubCommand(topic, channel)
           ch.attr(NSQNettyClient.responsesAttr).get().add((subCommand, Promise[NSQFrame]()))
           ch.writeAndFlush(subCommand, ch.voidPromise())
-          log.info("send rdy {} to {}", maxReadyCount, ch.remoteAddress())
+          if (log.isTraceEnabled()) {
+            log.info("send rdy {} to {}", maxReadyCount, ch.remoteAddress())
+          }
           ch.writeAndFlush(RdyCommand(maxReadyCount), ch.voidPromise())
         case _ ⇒
       }
