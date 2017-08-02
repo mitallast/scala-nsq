@@ -108,6 +108,8 @@ class NSQLookupDefault(addresses: List[String]) extends NSQLookup {
         parser.next() match {
           case valueString("data") ⇒
             parseData()
+          case valueString("producers") ⇒
+            parseProducers()
           case valueString(field) ⇒
             parser.skipField()
           case JsonParser.endObject ⇒
